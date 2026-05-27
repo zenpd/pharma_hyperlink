@@ -1,0 +1,48 @@
+version: "3.9"
+
+# Local dev services for the Hyperlink Engine.
+#
+# Phase 1 only needs Ollama. Redis + Neo4j come online in Phase 2.
+# All services bind to localhost — no external exposure.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: hyperlink-ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    # First-time model pull:
+    #   docker exec -it hyperlink-ollama ollama pull llama3.1:8b
+
+  redis:
+    image: redis:7-alpine
+    container_name: hyperlink-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+
+  neo4j:
+    image: neo4j:5-community
+    container_name: hyperlink-neo4j
+    ports:
+      - "127.0.0.1:7474:7474"  # HTTP
+      - "127.0.0.1:7687:7687"  # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/changeme
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  redis_data:
+  neo4j_data:
+  neo4j_logs:

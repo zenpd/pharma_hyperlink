@@ -1,0 +1,29 @@
+[
+  {
+    "dossier_id": "DOS-2026-001",
+    "sponsor": "SunPharma",
+    "submission_type": "NDA",
+    "region": "US",
+    "sequence_number": "0001",
+    "study_ids": ["MED-2020-026", "NCT46913810"],
+    "status": "draft"
+  },
+  {
+    "dossier_id": "DOS-2026-002",
+    "sponsor": "SunPharma",
+    "submission_type": "MAA",
+    "region": "EU",
+    "sequence_number": "0001",
+    "study_ids": ["MED-2021-014"],
+    "status": "in_review"
+  },
+  {
+    "dossier_id": "DOS-2026-003",
+    "sponsor": "SunPharma",
+    "submission_type": "IND",
+    "region": "US",
+    "sequence_number": "0003",
+    "study_ids": ["SP-2024-001", "PROT-ABC-1234"],
+    "status": "draft"
+  }
+]

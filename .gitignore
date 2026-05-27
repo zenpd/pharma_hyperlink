@@ -1,0 +1,100 @@
+# Hyperlink Engine — gitignore
+
+# ── Python ──────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ── Poetry / pip ────────────────────────────────────────────────────────
+poetry.lock
+# (we DO want poetry.lock tracked in real projects; uncomment if locking)
+
+# ── Virtualenvs ─────────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── Testing & coverage ──────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+coverage_html/
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# ── Type checking ───────────────────────────────────────────────────────
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# ── Jupyter ─────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ── IDEs ────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── OS ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Environment & secrets ───────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ── Engine outputs ──────────────────────────────────────────────────────
+output/
+audit.jsonl
+*.log
+
+# ── Generated data ──────────────────────────────────────────────────────
+data/synthetic/
+data/training/checkpoints/
+data/samples/  # exclude until provenance manifest committed
+!data/samples/.gitkeep
+
+# ── Model artifacts ─────────────────────────────────────────────────────
+models/
+*.bin
+*.pt
+*.safetensors
+
+# ── Frontend (Phase 3) ──────────────────────────────────────────────────
+src/hyperlink_engine/dashboard/react_frontend/node_modules/
+src/hyperlink_engine/dashboard/react_frontend/dist/
+src/hyperlink_engine/dashboard/react_frontend/.vite/
+
+# ── Docker volumes ──────────────────────────────────────────────────────
+.docker/
+neo4j_data/
+redis_data/
