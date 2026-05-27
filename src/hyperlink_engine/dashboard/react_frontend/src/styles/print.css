@@ -1,0 +1,99 @@
+/* W12.2 — Print stylesheet for the gate-review export screen.
+ *
+ * When the operator hits Cmd+P on /export, the bundle must print
+ * black-and-white-legible: no chip colour dependency, no shadows, no
+ * background tints. Every status carries an icon + text equivalent so
+ * the print remains compliant with the README's accessibility mandate.
+ */
+
+@media print {
+  /* Hide chrome: top bar, sub bar, action buttons, the navigator chrome */
+  .hv-root header,
+  .hv-root .btn,
+  .hv-root [class*="DossierBar"],
+  [data-print-hide],
+  /* The hash-router top bar is in App.tsx with a fixed dark bg; force it off */
+  body > div > div:first-child {
+    display: none !important;
+  }
+
+  /* Force light theme regardless of toggle */
+  .theme-dark {
+    --bg: #fff;
+    --surface: #fff;
+    --surface-raised: #fff;
+    --surface-sunken: #fff;
+    --text-1: #000;
+    --text-2: #333;
+    --text-3: #555;
+    --border: #999;
+    --border-strong: #666;
+  }
+
+  /* Page setup */
+  @page {
+    size: letter portrait;
+    margin: 0.6in;
+  }
+
+  body,
+  .hv-root {
+    background: #fff !important;
+    color: #000 !important;
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    font-size: 10pt !important;
+  }
+
+  /* Flatten card styling — printers handle borders better than shadows. */
+  .card {
+    box-shadow: none !important;
+    border: 1pt solid #666 !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Flatten coloured tints to white-with-border; pair every status with text */
+  .chip {
+    background: #fff !important;
+    border: 1pt solid #666 !important;
+    color: #000 !important;
+  }
+  .chip.danger::before {
+    content: "[BLOCKER] ";
+    font-weight: 700;
+  }
+  .chip.warning::before {
+    content: "[WARN] ";
+    font-weight: 700;
+  }
+  .chip.success::before {
+    content: "[OK] ";
+    font-weight: 700;
+  }
+  .chip.info::before {
+    content: "[INFO] ";
+    font-weight: 700;
+  }
+
+  /* Drop animated/decorative motion */
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* Tables: stretch and let them break across pages */
+  .tbl {
+    width: 100% !important;
+  }
+  .tbl thead {
+    display: table-header-group;
+  }
+  .tbl tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}

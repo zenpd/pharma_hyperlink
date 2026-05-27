@@ -93,17 +93,20 @@ def test_default_factory_returns_mock(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_live_mode_requires_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HYPERLINK_DOSSPLORER_MODE", "live")
     monkeypatch.delenv("HYPERLINK_DOSSPLORER_BASE_URL", raising=False)
-    monkeypatch.delenv("HYPERLINK_DOSSPLORER_TOKEN", raising=False)
+    monkeypatch.delenv("HYPERLINK_DOSSPLORER_CLIENT_ID", raising=False)
+    monkeypatch.delenv("HYPERLINK_DOSSPLORER_CLIENT_SECRET", raising=False)
     with pytest.raises(DossplorerError, match="requires"):
         get_client()
 
 
-def test_live_client_not_implemented(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_live_client_constructs_when_env_complete(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Live mode now constructs a LiveDossplorerClient (W11.1)."""
     monkeypatch.setenv("HYPERLINK_DOSSPLORER_MODE", "live")
     monkeypatch.setenv("HYPERLINK_DOSSPLORER_BASE_URL", "https://example.local")
-    monkeypatch.setenv("HYPERLINK_DOSSPLORER_TOKEN", "fake-token")
-    with pytest.raises(NotImplementedError):
-        get_client()
+    monkeypatch.setenv("HYPERLINK_DOSSPLORER_CLIENT_ID", "cid")
+    monkeypatch.setenv("HYPERLINK_DOSSPLORER_CLIENT_SECRET", "csec")
+    client = get_client()
+    assert isinstance(client, LiveDossplorerClient)
 
 
 def test_default_fixture_loads() -> None:
@@ -153,6 +156,11 @@ def test_push_anomaly_rejects_unknown_dossier(fixture_path: Path) -> None:
         )
 
 
-def test_live_client_direct_init_raises() -> None:
-    with pytest.raises(NotImplementedError):
-        LiveDossplorerClient(base_url="https://example.local/", token="t")
+def test_live_client_direct_init_succeeds() -> None:
+    """Direct construction now works (W11.1)."""
+    client = LiveDossplorerClient(
+        base_url="https://example.local/",
+        client_id="cid",
+        client_secret="csec",
+    )
+    assert client is not None

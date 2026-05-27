@@ -1,0 +1,141 @@
+# Health-Authority (HA) Rules — Phase 3 W10.1
+#
+# Each rule is evaluated against a DossierContext by the
+# `validation.ha_rule_engine` module. The validator function name maps to a
+# Python callable registered in `HA_RULE_VALIDATORS`. Adding a new rule
+# means: append an entry here + register a matching validator function.
+#
+# Severity ranks:
+#   blocker   → submission gate failure
+#   warning   → reviewable but does not block tagging
+#   info      → informational; for QC dashboard surfacing
+
+# ── United States — FDA (CDER / CBER) ──────────────────────────────────────
+fda:
+  region: us
+  rules:
+    - id: FDA_BOOKMARK_DEPTH
+      description: >
+        Every PDF must contain bookmarks at every section heading down to
+        ≥3 levels deep (FDA Guidance: PDF Specifications, Section 4.2.3).
+      applicable_modules: ["m2", "m3", "m4", "m5"]
+      severity: blocker
+      validator: fda_bookmark_depth_min_3
+      params:
+        min_depth: 3
+
+    - id: FDA_PDFA_2B
+      description: >
+        Published renditions in regulatory submissions must be PDF/A-2b
+        compliant (FDA Guidance: Providing Regulatory Submissions in
+        Electronic Format § 4.1).
+      applicable_modules: ["m1", "m2", "m3", "m4", "m5"]
+      severity: blocker
+      validator: pdf_a_2b_compliance
+
+    - id: FDA_HYPERLINK_BLUE
+      description: >
+        FDA convention: hyperlink runs should display in blue (#0000FF
+        ± tolerance) so reviewers visually identify navigable refs.
+      applicable_modules: ["m2", "m3", "m4", "m5"]
+      severity: warning
+      validator: hyperlink_color_blue
+      params:
+        rgb: "0000FF"
+        tolerance: 40
+
+    - id: FDA_LEAF_TITLE_LENGTH
+      description: >
+        FDA backbone leaf titles ≤ 64 characters (eCTD validation criteria 2.7).
+      applicable_modules: ["m1", "m2", "m3", "m4", "m5"]
+      severity: blocker
+      validator: leaf_title_max_length
+      params:
+        max_length: 64
+
+# ── European Union — EMA / CMDh ─────────────────────────────────────────────
+ema:
+  region: eu
+  rules:
+    - id: EMA_ESPRE_NAMING
+      description: >
+        ESPRE-compatible leaf filenames: lowercase ASCII, hyphen-separated,
+        no spaces, no underscores at start.
+      applicable_modules: ["m1", "m2", "m3", "m4", "m5"]
+      severity: blocker
+      validator: espre_filename_convention
+
+    - id: EMA_PDFA_1B_OR_2B
+      description: >
+        EMA accepts PDF/A-1b or PDF/A-2b; reject anything outside.
+      applicable_modules: ["m1", "m2", "m3", "m4", "m5"]
+      severity: blocker
+      validator: pdf_a_1b_or_2b_compliance
+
+    - id: EMA_BOOKMARK_DEPTH
+      description: >
+        EMA recommends bookmark depth ≥ 2 (less strict than FDA).
+      applicable_modules: ["m2", "m3", "m4", "m5"]
+      severity: warning
+      validator: ema_bookmark_depth_min_2
+      params:
+        min_depth: 2
+
+    - id: EMA_LEAF_TITLE_LENGTH
+      description: >
+        EMA backbone leaf titles ≤ 256 characters (EU eCTD M1 specification).
+      applicable_modules: ["m1"]
+      severity: warning
+      validator: leaf_title_max_length
+      params:
+        max_length: 256
+
+# ── Japan — PMDA / MHLW ─────────────────────────────────────────────────────
+pmda:
+  region: jp
+  rules:
+    - id: PMDA_SJIS_TITLE
+      description: >
+        Leaf titles containing Japanese characters must round-trip
+        through Shift-JIS (Japan-specific encoding requirement).
+      applicable_modules: ["m1"]
+      severity: blocker
+      validator: pmda_sjis_round_trip
+
+    - id: PMDA_BOOKMARK_DEPTH
+      description: >
+        PMDA bookmark depth: ≥ 3 levels for clinical study reports.
+      applicable_modules: ["m5"]
+      severity: warning
+      validator: pmda_bookmark_depth_min_3
+      params:
+        min_depth: 3
+
+    - id: PMDA_LEAF_TITLE_LENGTH
+      description: >
+        PMDA: leaf titles ≤ 128 characters (per JP regional M1 spec).
+      applicable_modules: ["m1", "m2", "m3", "m4", "m5"]
+      severity: blocker
+      validator: leaf_title_max_length
+      params:
+        max_length: 128
+
+# ── Canada — Health Canada ──────────────────────────────────────────────────
+hc:
+  region: ca
+  rules:
+    - id: HC_PDFA_2B
+      description: >
+        Health Canada follows FDA PDF/A-2b requirement for published renditions.
+      applicable_modules: ["m1", "m2", "m3", "m4", "m5"]
+      severity: blocker
+      validator: pdf_a_2b_compliance
+
+    - id: HC_BOOKMARK_DEPTH
+      description: >
+        Health Canada bookmark depth ≥ 3 levels.
+      applicable_modules: ["m2", "m3", "m4", "m5"]
+      severity: warning
+      validator: hc_bookmark_depth_min_3
+      params:
+        min_depth: 3

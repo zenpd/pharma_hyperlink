@@ -115,6 +115,26 @@ class AnomalyKind(str, Enum):
     STYLE_MUTATION = "style_mutation"
 
 
+class HaRegion(str, Enum):
+    """Health Authority region codes used by the HA rule engine."""
+
+    US = "us"   # FDA
+    EU = "eu"   # EMA
+    JP = "jp"   # PMDA
+    CA = "ca"   # Health Canada
+
+
+class HaViolation(BaseModel):
+    """Output of one HA rule evaluation."""
+
+    rule_id: str
+    region: HaRegion
+    severity: AnomalySeverity
+    description: str
+    target: str  # leaf_id / file path / "dossier" — context for the violation
+    detail: str | None = None  # specific failure detail (e.g. measured value)
+
+
 class Anomaly(BaseModel):
     """A single detected anomaly."""
 
