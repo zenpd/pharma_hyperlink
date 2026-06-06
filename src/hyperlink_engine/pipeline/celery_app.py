@@ -138,3 +138,13 @@ def stage_task_name(stage: str, action: str, *, app_name: str = "hyperlink_engin
     if stage not in PIPELINE_STAGES:
         raise ValueError(f"unknown pipeline stage: {stage!r}")
     return f"{app_name}.{stage}.{action}"
+
+
+# ── Module-level app instance required by the Celery CLI ─────────────────────
+# The CLI does `from hyperlink_engine.pipeline.celery_app import app`
+# so we must expose a top-level name. We call make_celery_app() lazily;
+# if Celery is not installed this will raise CeleryUnavailable.
+try:
+    app = make_celery_app()
+except Exception:  # pragma: no cover
+    app = None  # type: ignore[assignment]

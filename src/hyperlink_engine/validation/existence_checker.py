@@ -38,6 +38,11 @@ class LinkProbe:
     kind: LinkKind
     target: str
     target_doc: Path | None = None
+    detected_by: str | None = None
+    ner_pattern: str | None = None
+    llm_called: bool = False
+    llm_confidence_before: float | None = None
+    llm_confidence_after: float | None = None
 
 
 _VALID_URL_SCHEME_RE = re.compile(r"^(https?|ftp|mailto)$", re.IGNORECASE)
@@ -128,6 +133,11 @@ def check_link(probe: LinkProbe) -> LinkRecord:
         status=status,
         confidence=1.0 if status == LinkStatus.OK else 0.5,
         error_msg=err,
+        detected_by=probe.detected_by,
+        ner_pattern=probe.ner_pattern,
+        llm_called=probe.llm_called,
+        llm_confidence_before=probe.llm_confidence_before,
+        llm_confidence_after=probe.llm_confidence_after,
     )
 
 

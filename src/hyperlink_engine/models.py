@@ -158,6 +158,12 @@ class LinkRecord(BaseModel):
     status: LinkStatus
     confidence: float = Field(ge=0.0, le=1.0)
     error_msg: str | None = None
+    # Traceability fields (optional, for Phase 2 extended test set)
+    detected_by: Literal["regex", "ner", "llm", "merged"] | None = None
+    ner_pattern: str | None = None  # NER pattern name if applicable
+    llm_called: bool = False
+    llm_confidence_before: float | None = None
+    llm_confidence_after: float | None = None
 
 
 class ValidationReport(BaseModel):

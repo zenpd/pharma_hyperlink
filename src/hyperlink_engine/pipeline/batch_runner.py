@@ -231,3 +231,104 @@ def _write_aggregate(report: BatchRunReport, batch: DossierBatchDescriptor) -> P
     aggregate.parent.mkdir(parents=True, exist_ok=True)
     write_link_records(all_records, aggregate)
     return aggregate
+
+
+# ── CLI entry point ───────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(
+        prog="batch_runner",
+        description="Hyperlink Engine — bulk dossier pipeline runner",
+    )
+    parser.add_argument(
+        "--input",
+        required=True,
+        metavar="DIR",
+        help="Root directory of source .docx files (searched recursively)",
+    )
+    parser.add_argument(
+        "--output",
+        required=True,
+        metavar="DIR",
+        help="Output directory for linked .docx files",
+    )
+    parser.add_argument(
+        "--report",
+        default="csv",
+        choices=["csv", "none"],
+        help="Report format (default: csv)",
+    )
+    parser.add_argument(
+        "--mode",
+        default="threaded",
+        choices=["sync", "threaded", "celery"],
+        help="Run mode (default: threaded)",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="Number of parallel workers for threaded mode (default: 4)",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose / debug logging",
+    )
+    args = parser.parse_args()
+
+    if args.verbose:
+        from hyperlink_engine.config.logging_setup import configure_logging
+        settings = get_settings()
+        try:
+            settings.log_level = "DEBUG"
+            configure_logging()
+        except Exception:
+            pass
+
+
+    input_dir = Path(args.input)
+    output_dir = Path(args.output)
+
+    if not input_dir.exists():
+        print(f"ERROR: input directory does not exist: {input_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    batch = DossierBatchDescriptor.from_directory(
+        input_dir,
+        output_root=output_dir,
+        report_root=output_dir,
+    )
+
+    if batch.doc_count() == 0:
+        print(f"WARNING: no .docx files found under {input_dir}", file=sys.stderr)
+        sys.exit(0)
+
+    print(f"Found {batch.doc_count()} documents in {input_dir}")
+    print(f"Output -> {output_dir}")
+    print(f"Mode: {args.mode} | Workers: {args.workers}")
+    print("Starting pipeline...\n")
+
+    result = run_batch(batch, mode=args.mode, workers=args.workers)
+
+    print("\n" + "=" * 60)
+    print("BATCH COMPLETE")
+    print("=" * 60)
+    print(f"  Documents processed : {result.documents_processed}")
+    print(f"  Total links found   : {result.total_links}")
+    print(f"  Broken links        : {result.total_broken}")
+    print(f"  Broken rate         : {result.broken_rate:.1%}")
+    print(f"  Duration            : {result.total_duration_seconds:.1f}s")
+    print(f"  Throughput          : {result.docs_per_hour:.0f} docs/hour")
+    if result.failures:
+        print(f"\n  FAILURES ({len(result.failures)}):")
+        for path, err in result.failures:
+            print(f"    {path.name}: {err}")
+    if result.aggregate_csv:
+        print(f"\n  Report saved -> {result.aggregate_csv}")
+    print("=" * 60)

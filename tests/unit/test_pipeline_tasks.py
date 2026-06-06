@@ -21,6 +21,7 @@ from hyperlink_engine.pipeline.tasks import (
     register_celery_tasks,
     validate_links,
     write_per_doc_report,
+    _registered_tasks,
 )
 
 
@@ -36,8 +37,10 @@ def _make_docx_with_refs(path: Path, text: str = "See Section 2.5.3 and Table 1"
 @pytest.fixture(autouse=True)
 def _reset_celery_state() -> None:
     reset_app()
+    _registered_tasks.clear()
     yield
     reset_app()
+    _registered_tasks.clear()
 
 
 # ── Stage 1: ingest_document ────────────────────────────────────────────
@@ -281,7 +284,18 @@ def test_process_document_idempotent(tmp_path: Path) -> None:
 
 # ── Celery task registration ───────────────────────────────────────────
 
+# These tests require the optional ``celery`` package.
+try:
+    import celery as _celery_mod  # noqa: F401
 
+    _has_celery = True
+except ImportError:
+    _has_celery = False
+
+_skip_no_celery = pytest.mark.skipif(not _has_celery, reason="celery not installed")
+
+
+@_skip_no_celery
 def test_register_celery_tasks_creates_one_per_stage() -> None:
     tasks = register_celery_tasks()
     # One task per stage.
@@ -290,6 +304,7 @@ def test_register_celery_tasks_creates_one_per_stage() -> None:
         assert matches, f"no task registered for stage {stage}"
 
 
+@_skip_no_celery
 def test_register_celery_tasks_is_idempotent() -> None:
     a = register_celery_tasks()
     b = register_celery_tasks()
@@ -298,20 +313,25 @@ def test_register_celery_tasks_is_idempotent() -> None:
         assert a[key] is b[key]
 
 
+@_skip_no_celery
 def test_get_task_returns_callable() -> None:
     register_celery_tasks()
     task = get_task("ingestion", "ingest_document")
     assert callable(task)
 
 
+@_skip_no_celery
 def test_get_task_unknown_raises() -> None:
     register_celery_tasks()
     with pytest.raises(KeyError):
         get_task("ingestion", "no_such_action")
 
 
+@_skip_no_celery
 def test_celery_task_runs_eagerly(tmp_path: Path) -> None:
     """In eager mode, .delay() should execute synchronously and return a result."""
+    from hyperlink_engine.pipeline.celery_app import make_celery_app
+    make_celery_app(eager=True)
     register_celery_tasks()
     src = tmp_path / "x.docx"
     _make_docx_with_refs(src, "Section 2.5.3")
@@ -320,3 +340,4 @@ def test_celery_task_runs_eagerly(tmp_path: Path) -> None:
     record = result.get(timeout=5)  # eager → already done
     assert record["sha256"]
     assert record["source_path"] == str(src)
+

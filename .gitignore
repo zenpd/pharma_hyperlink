@@ -90,9 +90,9 @@ models/
 *.safetensors
 
 # ── Frontend (Phase 3) ──────────────────────────────────────────────────
-src/hyperlink_engine/dashboard/react_frontend/node_modules/
-src/hyperlink_engine/dashboard/react_frontend/dist/
-src/hyperlink_engine/dashboard/react_frontend/.vite/
+**/node_modules/
+**/dist/
+**/.vite/
 
 # ── Docker volumes ──────────────────────────────────────────────────────
 .docker/

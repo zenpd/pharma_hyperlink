@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from hyperlink_engine.pipeline import celery_app as celery_app_module
+# celery is an optional dep — skip the whole module when not installed.
+pytest.importorskip("celery")
+
+from hyperlink_engine.pipeline import celery_app as celery_app_module  # noqa: E402
 from hyperlink_engine.pipeline.celery_app import (
     PIPELINE_STAGES,
     STAGE_DETECTION,

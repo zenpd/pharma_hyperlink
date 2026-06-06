@@ -15,6 +15,7 @@ from hyperlink_engine.pipeline.batch_runner import (
 )
 from hyperlink_engine.pipeline.cache import ExtractorConfig
 from hyperlink_engine.pipeline.celery_app import reset_app
+from hyperlink_engine.pipeline.tasks import _registered_tasks
 
 
 def _make_docx_with_refs(path: Path, text: str) -> None:
@@ -26,8 +27,10 @@ def _make_docx_with_refs(path: Path, text: str) -> None:
 @pytest.fixture(autouse=True)
 def _reset_celery_state() -> None:
     reset_app()
+    _registered_tasks.clear()
     yield
     reset_app()
+    _registered_tasks.clear()
 
 
 @pytest.fixture
@@ -140,11 +143,20 @@ def test_run_batch_threaded_speeds_up_smoke(small_batch: DossierBatchDescriptor)
 
 # ── run_batch — celery mode (eager) ────────────────────────────────────
 
+try:
+    import celery as _celery_mod  # noqa: F401
 
+    _has_celery = True
+except ImportError:
+    _has_celery = False
+
+
+@pytest.mark.skipif(not _has_celery, reason="celery not installed")
 def test_run_batch_celery_eager_mode(small_batch: DossierBatchDescriptor) -> None:
     report = run_batch(small_batch, mode="celery")
     assert report.documents_processed == 3
     assert not report.failures
+
 
 
 # ── Failure tolerance ──────────────────────────────────────────────────

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 # Streamlit is an optional dependency — import lazily so the rest of the
 # engine can be imported without it installed.
@@ -255,6 +256,186 @@ def _render_export(df: "pd.DataFrame", report_root: Path) -> None:  # type: igno
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Plan Two — Run Pipeline page
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _render_run_pipeline() -> None:  # pragma: no cover
+    """Upload dossier documents, trigger the pipeline, watch live state."""
+    import tempfile
+
+    st.header("🚀 Run Pipeline")
+    st.caption(
+        "Upload documents (`.docx` or `.pdf`), trigger the AI pipeline, "
+        "and watch the orchestration state in real time."
+    )
+
+    # ── Step 1: Upload ─────────────────────────────────────────────────────
+    st.subheader("1 · Upload Documents")
+    dossier_id = st.text_input(
+        "Dossier ID (optional)",
+        value="",
+        placeholder="e.g. DOS-2026-DEMO",
+        help="Leave blank to auto-assign a run ID.",
+    )
+    uploaded_files = st.file_uploader(
+        "Drop your dossier documents here",
+        type=["docx", "pdf"],
+        accept_multiple_files=True,
+        help="Upload 1–10 Word or PDF documents. Cross-document references will be detected and linked.",
+    )
+
+    if not uploaded_files:
+        st.info("Upload at least one `.docx` document to begin.")
+        return
+
+    st.success(f"✅ {len(uploaded_files)} file(s) ready: " + ", ".join(f.name for f in uploaded_files))
+
+    # ── Step 2: Trigger ────────────────────────────────────────────────────
+    st.subheader("2 · Run the Pipeline")
+    col1, col2 = st.columns([1, 3])
+    run_clicked = col1.button("▶  Run Now", type="primary", use_container_width=True)
+
+    if not run_clicked:
+        col2.caption(
+            "The engine will: **ingest → parse → detect references "
+            "(regex + NER + Ollama) → inject hyperlinks → validate → score**"
+        )
+        return
+
+    # ── Save uploaded files to a temp dir ─────────────────────────────────
+    with tempfile.TemporaryDirectory(prefix="hle_upload_") as tmpdir:
+        tmp = Path(tmpdir)
+        input_files = []
+        for uf in uploaded_files:
+            dest = tmp / uf.name
+            dest.write_bytes(uf.read())
+            input_files.append(dest)
+
+        # ── Step 3: Live orchestration ──────────────────────────────────────
+        st.subheader("3 · Live Pipeline State")
+        _run_pipeline_with_live_state(input_files, dossier_id, tmp)
+
+
+def _run_pipeline_with_live_state(
+    input_files: list[Path],
+    dossier_id: str,
+    base_dir: Path,
+) -> None:  # pragma: no cover
+    """Run the pipeline synchronously, updating the Streamlit stepper live."""
+    from hyperlink_engine.orchestration.runner import PipelineRunner
+    from hyperlink_engine.orchestration.state import PipelineState, run_store
+    from hyperlink_engine.orchestration.events import NODE_LABELS
+
+    output_dir = base_dir / "output"
+    output_dir.mkdir(exist_ok=True)
+
+    state = PipelineState.new(input_files, output_dir, dossier_id)
+    run_store.create(state)
+
+    # Stepper: one row per node in the execution order
+    node_order = [
+        "load_dossier", "parse_all", "detect_references", "resolve_targets",
+        "inject_links", "validate", "score_and_report",
+    ]
+    node_status: dict[str, str] = {n: "pending" for n in node_order}
+
+    # Build stepper UI placeholders
+    stepper_slots: dict[str, Any] = {}
+    cols = st.columns(len(node_order))
+    for i, node in enumerate(node_order):
+        with cols[i]:
+            stepper_slots[node] = st.empty()
+            stepper_slots[node].markdown(f"⏸ **{NODE_LABELS.get(node, node)}**")
+
+    st.divider()
+    log_container = st.empty()
+    log_lines: list[str] = []
+
+    def _on_event(event: dict) -> None:
+        node = event.get("node", "")
+        status = event.get("status", "")
+        if node in node_status:
+            node_status[node] = status
+            icon = "🟡" if status == "running" else "✅" if status == "done" else "❌"
+            label = NODE_LABELS.get(node, node)
+            stepper_slots[node].markdown(f"{icon} **{label}**")
+        details = event.get("details") or {}
+        detail_str = " · ".join(f"{k}={v}" for k, v in details.items() if v not in (None, "", {}))
+        msg = f"`{node}` {status}" + (f" — {detail_str}" if detail_str else "")
+        log_lines.append(msg)
+        log_container.markdown("\n\n".join(f"• {l}" for l in log_lines[-12:]))
+
+    runner = PipelineRunner()
+    with st.spinner("Pipeline running…"):
+        final_state = runner.invoke(state, on_event=_on_event)
+
+    # ── Step 4: Results ─────────────────────────────────────────────────────
+    st.subheader("4 · Results")
+
+    score = final_state.get("score", 0.0)
+    grade = final_state.get("grade", "F")
+    total_links = len(final_state.get("links", []))
+    broken = sum(1 for l in final_state.get("links", []) if l.get("status") == "broken")
+    linked_files = final_state.get("linked_files", [])
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Readiness Score", f"{score}/100", delta=grade)
+    c2.metric("Total Links", total_links)
+    c3.metric("Broken", broken, delta_color="inverse")
+    c4.metric("Linked Files", len(linked_files))
+
+    ready_label = "✅ SUBMISSION READY" if score >= 80 and broken == 0 else "⚠️ REVIEW NEEDED"
+    st.info(f"**Grade {grade}** — {ready_label}")
+
+    # Download linked files
+    if linked_files:
+        st.markdown("**Download linked documents:**")
+        dl_cols = st.columns(min(len(linked_files), 4))
+        for i, fp in enumerate(linked_files):
+            fp = Path(fp)
+            if fp.exists():
+                with open(fp, "rb") as fh:
+                    dl_cols[i % 4].download_button(
+                        label=f"⬇ {fp.name}",
+                        data=fh.read(),
+                        file_name=fp.name,
+                        mime=(
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            if fp.suffix == ".docx" else "application/pdf"
+                        ),
+                    )
+
+    # Download CSV report
+    csv_path = output_dir / "validation_report.csv"
+    if csv_path.exists():
+        st.download_button(
+            label="⬇ Download Validation Report (CSV)",
+            data=csv_path.read_bytes(),
+            file_name="validation_report.csv",
+            mime="text/csv",
+        )
+
+    if final_state.get("error"):
+        st.error(f"Pipeline error: {final_state['error']}")
+
+    # Show link table
+    links = final_state.get("links", [])
+    if links:
+        st.markdown("**Link records:**")
+        import pandas as pd
+        df = pd.DataFrame(links)[
+            ["source_doc", "link_text", "target_doc", "target_anchor", "status", "confidence", "detected_by"]
+        ] if links else pd.DataFrame()
+        st.dataframe(df, use_container_width=True, height=300)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main entrypoint
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 def main() -> None:  # pragma: no cover
     """Streamlit app entrypoint."""
     _require_streamlit()
@@ -266,10 +447,24 @@ def main() -> None:  # pragma: no cover
         initial_sidebar_state="expanded",
     )
 
-    # ── Sidebar — report directory picker ─────────────────────────────────
+    # ── Sidebar ────────────────────────────────────────────────────────────
     st.sidebar.title("🔗 Hyperlink Engine")
-    st.sidebar.caption("QC Dashboard v1 (Phase 2)")
+    st.sidebar.caption("QC Dashboard v2 (Plan Two)")
 
+    page = st.sidebar.radio(
+        "Navigate",
+        options=["🚀 Run Pipeline", "Overview", "Module Matrix", "Link Inspector", "Export"],
+        index=0,
+    )
+
+    # ── Run Pipeline (new Plan Two page) ──────────────────────────────────
+    if page == "🚀 Run Pipeline":
+        _render_run_pipeline()
+        st.sidebar.divider()
+        st.sidebar.caption("On-prem only. No data leaves this machine.")
+        return
+
+    # ── Legacy pages (load from report directory) ─────────────────────────
     default_dir = os.environ.get(
         "HYPERLINK_STREAMLIT_REPORT_DIR",
         str(Path("output/bench").resolve()),
@@ -285,24 +480,14 @@ def main() -> None:  # pragma: no cover
         st.error(f"Directory not found: `{report_root}`")
         st.stop()
 
-    # ── Navigation ─────────────────────────────────────────────────────────
-    page = st.sidebar.radio(
-        "Navigate",
-        options=["Overview", "Module Matrix", "Link Inspector", "Export"],
-        index=0,
-    )
-
-    # ── Load data ──────────────────────────────────────────────────────────
     try:
         import pandas as pd  # noqa: PLC0415
-
         df = _load_dossier_csv(report_root)
     except ImportError:
         st.error("pandas is required for the dashboard. Install with: `pip install pandas`")
         st.stop()
         return
 
-    # ── Render selected page ───────────────────────────────────────────────
     if page == "Overview":
         _render_home(df)
     elif page == "Module Matrix":
@@ -312,7 +497,6 @@ def main() -> None:  # pragma: no cover
     elif page == "Export":
         _render_export(df, report_root)
 
-    # ── Footer ─────────────────────────────────────────────────────────────
     st.sidebar.divider()
     st.sidebar.caption("On-prem only. No data leaves this machine.")
 

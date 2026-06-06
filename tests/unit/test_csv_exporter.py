@@ -37,6 +37,11 @@ def test_columns_are_stable() -> None:
         "status",
         "confidence",
         "error_msg",
+        "detected_by",
+        "ner_pattern",
+        "llm_called",
+        "llm_confidence_before",
+        "llm_confidence_after",
     )
 
 

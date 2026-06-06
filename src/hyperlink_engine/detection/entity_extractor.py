@@ -39,6 +39,11 @@ class ExtractedReference:
     confidence: float
     source_layer: str  # "regex" | "ner" | "llm" | "merged"
     groups: dict[str, str]
+    # Traceability fields (optional, populated if verbose mode enabled)
+    llm_consulted: bool = False
+    llm_confidence_before: float = 0.0
+    llm_confidence_after: float = 0.0
+    llm_reasoning: str = ""
 
 
 class EntityExtractor:
@@ -49,11 +54,13 @@ class EntityExtractor:
         registry: PatternRegistry | None = None,
         ner_extractor: SpacyNerExtractor | None = None,
         llm_disambiguator: LlmDisambiguator | None = None,
+        verbose: bool = False,
     ) -> None:
         self._registry = registry or default_registry()
         self._ner = ner_extractor
         self._llm = llm_disambiguator
         self._settings = get_settings()
+        self._verbose = verbose
 
     # ── Public extraction API ────────────────────────────────────────────
 
@@ -73,12 +80,14 @@ class EntityExtractor:
 
         resolved = resolve_overlaps(regex_matches + ner_matches)
 
+        llm_metadata: dict[int, dict[str, Any]] = {}
         if self._llm is not None and self._llm.should_refine(resolved):
-            resolved = self._apply_llm(resolved, text, source_by_match)
+            resolved = self._apply_llm(resolved, text, source_by_match, llm_metadata)
 
         out: list[ExtractedReference] = []
         for m in resolved:
             layer = source_by_match.get(id(m), "merged")
+            meta = llm_metadata.get(id(m), {})
             out.append(
                 ExtractedReference(
                     pattern_id=m.pattern_id,
@@ -89,6 +98,10 @@ class EntityExtractor:
                     confidence=m.confidence,
                     source_layer=layer,
                     groups=dict(m.groups),
+                    llm_consulted=meta.get("llm_consulted", False),
+                    llm_confidence_before=meta.get("llm_confidence_before", 0.0),
+                    llm_confidence_after=meta.get("llm_confidence_after", 0.0),
+                    llm_reasoning=meta.get("llm_reasoning", ""),
                 )
             )
         _log.info(
@@ -107,6 +120,7 @@ class EntityExtractor:
         merged: list[Match],
         source_text: str,
         source_by_match: dict[int, str],
+        llm_metadata: dict[int, dict[str, Any]],
     ) -> list[Match]:
         """For each low-confidence match, ask the LLM to refine it.
 
@@ -114,6 +128,8 @@ class EntityExtractor:
         windowed context around the span via the disambiguator. The result
         replaces the original match in-place; if the LLM declines (returns
         None), we keep the original.
+
+        If verbose, logs all LLM calls with before/after confidence.
         """
         if not self._llm:
             return merged
@@ -133,8 +149,27 @@ class EntityExtractor:
             if decision is None:
                 refined.append(m)
                 continue
+
+            if self._verbose:
+                _log.info(
+                    "llm_refinement",
+                    text=m.text,
+                    confidence_before=m.confidence,
+                    confidence_after=decision.chosen.confidence,
+                    pattern_before=m.pattern_id,
+                    pattern_after=decision.chosen.pattern_id,
+                    rationale=decision.rationale,
+                    model=decision.model,
+                )
+
             refined.append(decision.chosen)
             source_by_match[id(decision.chosen)] = "llm"
+            llm_metadata[id(decision.chosen)] = {
+                "llm_consulted": True,
+                "llm_confidence_before": m.confidence,
+                "llm_confidence_after": decision.chosen.confidence,
+                "llm_reasoning": decision.rationale or "",
+            }
         return refined
 
     def _label_for(self, match: Match) -> str:

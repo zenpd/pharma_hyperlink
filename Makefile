@@ -52,6 +52,9 @@ coverage:
 synthetic:
 	poetry run python -m scripts.bootstrap_synthetic_data --out data/synthetic --docs 20
 
+synthetic-extended:
+	poetry run python -m scripts.bootstrap_synthetic_data --out data/synthetic --docs 30
+
 spike:
 	poetry run hyperlink-engine spike \
 		--input data/synthetic/m2/2-5-clin-overview/2-5-clin-overview.docx \

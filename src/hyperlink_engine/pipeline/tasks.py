@@ -112,6 +112,10 @@ def detect_references(
                         "confidence": ref.confidence,
                         "source_layer": ref.source_layer,
                         "groups": dict(ref.groups),
+                        "llm_consulted": ref.llm_consulted,
+                        "llm_confidence_before": ref.llm_confidence_before,
+                        "llm_confidence_after": ref.llm_confidence_after,
+                        "llm_reasoning": ref.llm_reasoning,
                     }
                 )
     return {"ingest": ingest_record, "detections": detections}
@@ -166,6 +170,11 @@ def inject_links(
                 "kind": kind.value,
                 "target": target,
                 "target_doc": str(out),
+                "detected_by": det.get("source_layer"),
+                "ner_pattern": det.get("pattern_id") if det.get("source_layer") == "ner" else None,
+                "llm_called": det.get("llm_consulted", False) or det.get("source_layer") == "llm",
+                "llm_confidence_before": det.get("llm_confidence_before"),
+                "llm_confidence_after": det.get("llm_confidence_after"),
             }
         )
     linker.save()
@@ -217,7 +226,12 @@ def validate_links(injection_record: dict[str, Any]) -> dict[str, Any]:
                 location_descriptor=p["location_descriptor"],
                 kind=LinkKind(p["kind"]),
                 target=p["target"],
-                target_doc=Path(p["target_doc"]),
+                target_doc=Path(p["target_doc"]) if p.get("target_doc") else None,
+                detected_by=p.get("detected_by"),
+                ner_pattern=p.get("ner_pattern"),
+                llm_called=p.get("llm_called", False),
+                llm_confidence_before=p.get("llm_confidence_before"),
+                llm_confidence_after=p.get("llm_confidence_after"),
             )
         )
     records = check_all(probes)

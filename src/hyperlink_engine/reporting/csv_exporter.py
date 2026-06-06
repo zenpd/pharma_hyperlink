@@ -26,6 +26,12 @@ CSV_COLUMNS = (
     "status",
     "confidence",
     "error_msg",
+    # Traceability columns (Phase 2 extended test set)
+    "detected_by",
+    "ner_pattern",
+    "llm_called",
+    "llm_confidence_before",
+    "llm_confidence_after",
 )
 
 
@@ -47,6 +53,12 @@ def _row(record: LinkRecord) -> dict[str, str]:
         "status": record.status.value,
         "confidence": f"{record.confidence:.3f}",
         "error_msg": record.error_msg or "",
+        # Traceability columns
+        "detected_by": record.detected_by or "",
+        "ner_pattern": record.ner_pattern or "",
+        "llm_called": "yes" if record.llm_called else "no",
+        "llm_confidence_before": f"{record.llm_confidence_before:.3f}" if record.llm_confidence_before is not None else "",
+        "llm_confidence_after": f"{record.llm_confidence_after:.3f}" if record.llm_confidence_after is not None else "",
     }
 
 
