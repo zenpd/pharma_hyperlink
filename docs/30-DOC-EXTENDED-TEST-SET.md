@@ -103,26 +103,26 @@ These documents contain **grammatically complex or context-dependent entities** 
 - Contextual templates: grammatical complexity, implicit labeling
 - Updated CLI output to show doc breakdown and expected trigger counts
 
-#### 2. **Model Extensions** (`src/hyperlink_engine/models.py`)
+#### 2. **Model Extensions** (`backend/src/hyperlink_engine/models.py`)
 - Extended `LinkRecord` with traceability fields:
   - `detected_by`: "regex" | "ner" | "llm" | "merged"
   - `ner_pattern`: pattern name if applicable
   - `llm_called`: boolean flag
   - `llm_confidence_before` / `llm_confidence_after`: confidence tracking
 
-#### 3. **Entity Extractor Enhancement** (`src/hyperlink_engine/detection/entity_extractor.py`)
+#### 3. **Entity Extractor Enhancement** (`backend/src/hyperlink_engine/core/detection/entity_extractor.py`)
 - Added `verbose` parameter to `EntityExtractor.__init__`
 - Extended `ExtractedReference` with traceability fields
 - Updated `_apply_llm()` to log confidence before/after and rationale
 - All LLM calls logged to `llm_refinement` event
 
-#### 4. **CSV Exporter Update** (`src/hyperlink_engine/reporting/csv_exporter.py`)
+#### 4. **CSV Exporter Update** (`backend/src/hyperlink_engine/core/reporting/csv_exporter.py`)
 - Added 5 new columns to CSV output:
   - `detected_by`, `ner_pattern`, `llm_called`
   - `llm_confidence_before`, `llm_confidence_after`
 - Backward compatible: original columns unchanged
 
-#### 5. **Dashboard API Extension** (`src/hyperlink_engine/dashboard/api.py`)
+#### 5. **Dashboard API Extension** (`backend/src/hyperlink_engine/api/app.py`)
 - New `DetectionTraceResponse` Pydantic model
 - New `_ReportStore.get_detection_trace()` method
 - New `/api/dossiers/{dossier_id}/detection-trace` endpoint
@@ -171,8 +171,8 @@ Expected NER calls: ~80 (13–20 per contextual doc)
 
 ```bash
 cd hyperlink-engine
-docker compose up -d ollama redis neo4j  # Start services
-python -m hyperlink_engine.pipeline.batch_runner \
+docker compose -f infra/docker/docker-compose.yml up -d ollama redis neo4j  # Start services
+python -m hyperlink_engine.workers.batch_runner \
   --input data/synthetic \
   --output output/run30 \
   --mode threaded \
@@ -190,7 +190,7 @@ python -m hyperlink_engine.pipeline.batch_runner \
 ### View Detection Trace in Dashboard
 
 ```bash
-cd hyperlink-engine/src/hyperlink_engine/dashboard/simple_frontend
+cd hyperlink-engine/frontend
 npm run dev  # Starts on http://localhost:5174
 
 # Then navigate: Dashboard → Detection Layer Trace button
@@ -343,9 +343,9 @@ contextual-ner-01.docx,chart 11,p5.r1:c22-31,appendix-fig-11.docx,figure_11,ok,0
 
 - **Plan:** `docs/hyperlink-automation-engine-architecture.md`
 - **Bootstrap Script:** `scripts/bootstrap_synthetic_data.py`
-- **Entity Extractor:** `src/hyperlink_engine/detection/entity_extractor.py`
-- **Dashboard API:** `src/hyperlink_engine/dashboard/api.py`
-- **React Frontend:** `src/hyperlink_engine/dashboard/simple_frontend/src/screens/DetectionTrace.tsx`
+- **Entity Extractor:** `backend/src/hyperlink_engine/core/detection/entity_extractor.py`
+- **Dashboard API:** `backend/src/hyperlink_engine/api/app.py`
+- **React Frontend:** `frontend/src/screens/DetectionTrace.tsx`
 
 ---
 

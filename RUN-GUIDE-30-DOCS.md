@@ -1,14 +1,16 @@
 # Run Guide: 30-Document Extended Test Set (Phase 2 NER/Ollama Validation)
 
+> **Monorepo layout (updated):** Python now lives in `backend/`, the React app in `frontend/`, infra in `infra/`; the shared venv stays at the repo root (`.venv`). Run Python/script commands from `backend/` (venv = `../.venv/Scripts/python`), Docker from `backend/` via `-f ../infra/docker/docker-compose.yml`, and the frontend from `frontend/`. Where a command below shows the old single-folder layout, change the project-root `cd ...hyperlink-engine` to `...hyperlink-engine/backend` and the `.venv` prefix to `../.venv`. The root `README.md` has the canonical, verified command set.
+
 **Objective:** Execute the full hyperlink automation pipeline on 30 documents with traceable detection layer logging (regex, NER, Ollama).
 
 **Duration:** ~10–15 minutes setup + 5–10 minutes processing
 
 **Prerequisites:**
-- ✅ Python 3.11+, Poetry installed
+- ✅ Python 3.11+ (the repo ships a provisioned `.venv`)
 - ✅ Docker & docker-compose installed
 - ✅ Node.js 18+ (for React dashboard)
-- ✅ ~4GB RAM available (Ollama 8B model)
+- ✅ ~3GB RAM available (Ollama `llama3.2:3b` model, ~2GB on disk)
 
 ---
 
@@ -31,10 +33,13 @@
 cd "C:\Zensar\Hyperlink automation\hyperlink-engine"
 
 # Start Ollama, Redis, Neo4j in background
-docker compose up -d
+docker compose -f ../infra/docker/docker-compose.yml up -d
+
+# One-time: pull the local LLM model into the Ollama container (~2GB)
+docker exec hyperlink-ollama ollama pull llama3.2:3b
 
 # Verify all services are running
-docker compose ps
+docker compose -f ../infra/docker/docker-compose.yml ps
 ```
 
 **Expected output:**
@@ -56,7 +61,7 @@ cd "C:\Zensar\Hyperlink automation\hyperlink-engine"
 
 # Step 1: Generate 30 synthetic documents (20 standard + 5 ambiguous + 5 contextual)
 echo "=== Generating 30 documents ==="
-python -m scripts.bootstrap_synthetic_data --out data/synthetic --docs 30
+.\.venv\Scripts\python -m scripts.bootstrap_synthetic_data --out data/synthetic --docs 30
 
 # Expected output:
 # ======================================================================
@@ -73,12 +78,12 @@ python -m scripts.bootstrap_synthetic_data --out data/synthetic --docs 30
 
 echo ""
 echo "=== Starting FastAPI backend on port 8000 ==="
-echo "Waiting for Ollama to pull llama2 model (if needed)..."
+echo "Using local Ollama model llama3.2:3b..."
 echo "Ctrl+C to stop the server."
 echo ""
 
 # Step 2: Start the FastAPI backend (keep running in this terminal)
-poetry run uvicorn src.hyperlink_engine.dashboard.api:app --reload --port 8000 --host 0.0.0.0
+.\.venv\Scripts\python -m uvicorn hyperlink_engine.api.app:app --reload --port 8000 --host 0.0.0.0
 ```
 
 **Expected output (first run — Ollama model pull may take 2–3 min):**
@@ -96,7 +101,7 @@ INFO:     Application startup complete
 Open a **new terminal** while keeping Terminal 2 running.
 
 ```bash
-cd "C:\Zensar\Hyperlink automation\hyperlink-engine\src\hyperlink_engine\dashboard\simple_frontend"
+cd "C:\Zensar\Hyperlink automation\hyperlink-engine\frontend"
 
 # Step 1: Install frontend dependencies (first time only)
 echo "=== Installing React dependencies ==="
@@ -142,7 +147,7 @@ echo "Ctrl+C to cancel."
 echo ""
 
 # Run the batch pipeline
-poetry run python -m hyperlink_engine.pipeline.batch_runner `
+.\.venv\Scripts\python -m hyperlink_engine.workers.batch_runner `
   --input data/synthetic `
   --output output/run30 `
   --mode threaded `
@@ -322,16 +327,16 @@ contextual-ner-02.docx    |    88 |    72 |  16 |      0 |     0
 **Solution:**
 ```bash
 # Verify Ollama is running
-docker compose ps | grep ollama
+docker compose -f ../infra/docker/docker-compose.yml ps | grep ollama
 
 # If not running, restart
-docker compose restart ollama
+docker compose -f ../infra/docker/docker-compose.yml restart ollama
 
 # Wait 30 seconds for Ollama to start
 sleep 30
 
 # Try pulling model manually
-curl http://localhost:11434/api/pull -d '{"name": "llama2"}'
+curl http://localhost:11434/api/pull -d '{"name": "llama3.2:3b"}'
 ```
 
 ---
@@ -344,7 +349,7 @@ curl http://localhost:11434/api/pull -d '{"name": "llama2"}'
 ls -la data/synthetic/
 
 # If empty, regenerate
-python -m scripts.bootstrap_synthetic_data --out data/synthetic --docs 30
+.\.venv\Scripts\python -m scripts.bootstrap_synthetic_data --out data/synthetic --docs 30
 ```
 
 ---
@@ -354,7 +359,7 @@ python -m scripts.bootstrap_synthetic_data --out data/synthetic --docs 30
 **Solution:**
 ```bash
 # FastAPI endpoint not running or not populated with data yet
-# 1. Ensure Terminal 2 is running: poetry run uvicorn src.hyperlink_engine.dashboard.api:app --reload --port 8000
+# 1. Ensure Terminal 2 is running: .\.venv\Scripts\python -m uvicorn hyperlink_engine.api.app:app --reload --port 8000
 # 2. Run batch pipeline in Terminal 4 first
 # 3. Refresh browser after pipeline completes
 ```
@@ -365,12 +370,12 @@ python -m scripts.bootstrap_synthetic_data --out data/synthetic --docs 30
 
 **Solution:**
 ```bash
-# Install package in editable mode
-poetry install
+# Install package in editable mode (into the bundled venv)
+.\.venv\Scripts\python -m pip install -e ".[all]"
 
-# If poetry not found, ensure you're in the project root:
+# Make sure you're in the project root first:
 cd "C:\Zensar\Hyperlink automation\hyperlink-engine"
-poetry install
+.\.venv\Scripts\python -m pip install -e ".[all]"
 ```
 
 ---
@@ -385,7 +390,7 @@ cd "C:\Zensar\Hyperlink automation\hyperlink-engine"
 # Stop React frontend (Ctrl+C in Terminal 3)
 
 # Stop Docker services
-docker compose down
+docker compose -f ../infra/docker/docker-compose.yml down
 
 # Archive results
 zip -r output/run30_results.zip output/run30/
@@ -462,8 +467,8 @@ EOF
 - **Extended Test Set Guide:** `docs/30-DOC-EXTENDED-TEST-SET.md`
 - **Pattern Catalog:** `docs/pattern-catalog.md`
 - **Bootstrap Script:** `scripts/bootstrap_synthetic_data.py`
-- **API Reference:** `src/hyperlink_engine/dashboard/api.py`
-- **React Frontend:** `src/hyperlink_engine/dashboard/simple_frontend/README.md`
+- **API Reference:** `backend/src/hyperlink_engine/api/app.py`
+- **React Frontend:** `frontend/README.md`
 
 ---
 
@@ -471,7 +476,7 @@ EOF
 
 If issues arise:
 1. Check **Troubleshooting** section above
-2. Review **Docker logs:** `docker compose logs -f ollama`
+2. Review **Docker logs:** `docker compose -f ../infra/docker/docker-compose.yml logs -f ollama`
 3. Check **FastAPI logs:** Terminal 2 output
 4. Review **error files:** `output/run30/*.log`
 
@@ -481,7 +486,7 @@ If issues arise:
 
 Option A
 $env:HYPERLINK_GRAPH_BACKEND = "networkx"
-poetry run python -m hyperlink_engine.pipeline.batch_runner ...
+.\.venv\Scripts\python -m hyperlink_engine.workers.batch_runner ...
 
 Option B — Edit settings.py temporarily:
 
@@ -489,3 +494,57 @@ Option B — Edit settings.py temporarily:
 graph_backend: Literal["networkx", "neo4j"] = Field(default="neo4j")
 # To:
 graph_backend: Literal["networkx", "neo4j"] = Field(default="networkx")
+
+---
+
+## Appendix: Windows / PowerShell command reference
+
+> Consolidated from the former `POWERSHELL-COMMANDS.md` and `QUICK-START.md`.
+> PowerShell uses a backtick (`` ` ``) for line continuation, **not** `\`.
+
+### One line per terminal (copy-paste)
+
+```powershell
+# Terminal 1 — Docker services
+cd "C:\Zensar\Hyperlink automation\hyperlink-engine"; docker compose -f infra/docker/docker-compose.yml up -d
+
+# Terminal 2 — Generate 30 docs + start FastAPI backend (from backend/)
+cd "C:\Zensar\Hyperlink automation\hyperlink-engine\backend"; ..\.venv\Scripts\python -m scripts.bootstrap_synthetic_data --out data/synthetic --docs 30; ..\.venv\Scripts\python -m uvicorn hyperlink_engine.api.app:app --reload --port 8000
+
+# Terminal 3 — React dashboard
+cd "C:\Zensar\Hyperlink automation\hyperlink-engine\frontend"; npm install; npm run dev
+
+# Terminal 4 — Batch pipeline (main command)
+cd "C:\Zensar\Hyperlink automation\hyperlink-engine"; .\.venv\Scripts\python -m hyperlink_engine.workers.batch_runner --input data/synthetic --output output/run30 --workers 4
+
+# Terminal 5 — Push results to the dashboard
+cd "C:\Zensar\Hyperlink automation\hyperlink-engine"; .venv\Scripts\python scripts/push_results_to_dashboard.py --run output/run30 --dossier demo
+```
+
+### Bash → PowerShell cheatsheet
+
+| Feature | Bash | PowerShell |
+|---|---|---|
+| Line continuation | `\` | `` ` `` (backtick) |
+| Echo | `echo` | `Write-Host` |
+| Count lines | `wc -l file` | `Get-Content file \| Measure-Object -Line` |
+| Command separator | `;` | `;` |
+
+### Common Windows fixes
+
+```powershell
+# Execution-policy error when running a .ps1
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# Activate the bundled virtualenv so you can drop the .\.venv\Scripts\ prefix
+.\.venv\Scripts\Activate.ps1
+```
+
+### Quick post-run stats (PowerShell)
+
+```powershell
+cd "C:\Zensar\Hyperlink automation\hyperlink-engine"
+Get-Content output/run30/llm_calls.jsonl | Measure-Object -Line   # Ollama call count
+$csv = Import-Csv output/run30/dossier_links.csv
+$csv | Group-Object detected_by | ForEach-Object { "{0}: {1}" -f $_.Name, $_.Count }
+```

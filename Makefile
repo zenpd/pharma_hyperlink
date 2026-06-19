@@ -1,76 +1,70 @@
-# Hyperlink Engine — developer convenience targets
+# Hyperlink Engine — top-level monorepo task runner
 #
-# Use `make help` to see available commands.
-# On Windows: install GNU Make (https://gnuwin32.sourceforge.net/packages/make.htm)
-# or run the equivalent commands manually from README.md.
+# Python lives in backend/ (shared venv at ./.venv), React in frontend/, infra in infra/.
+# Activate the venv first:  .venv\Scripts\Activate.ps1   (Windows)
+#                           source .venv/bin/activate     (POSIX)
+# On Windows without GNU Make, run the underlying commands from README.md directly.
 
-.PHONY: help install test test-fast lint format synthetic spike spike-inspect \
-        services-up services-down clean coverage typecheck
+.PHONY: help install test test-fast lint format typecheck backend frontend frontend-build \
+        synthetic services-up services-down clean
 
 help:
-	@echo "Hyperlink Engine — make targets"
+	@echo "Hyperlink Engine — make targets (activate ./.venv first)"
 	@echo ""
-	@echo "  install        poetry install + pre-commit install"
-	@echo "  test           run full pytest suite with coverage gate"
-	@echo "  test-fast      run pytest excluding slow + integration tests"
-	@echo "  lint           ruff + black --check + mypy"
-	@echo "  format         black + ruff --fix"
-	@echo "  typecheck      mypy strict"
-	@echo "  coverage       open coverage_html/index.html (after make test)"
-	@echo "  synthetic      generate 20-doc synthetic dossier under data/synthetic/"
-	@echo "  spike          run W1.5 spike on first synthetic Module 2 doc"
-	@echo "  spike-inspect  show all detected references (no injection)"
-	@echo "  services-up    docker compose up -d (Ollama, Redis, Neo4j)"
+	@echo "  install        editable install of backend[all] + pre-commit hooks"
+	@echo "  test           backend pytest (full suite + coverage gate)"
+	@echo "  test-fast      backend pytest (no slow/integration, no coverage)"
+	@echo "  lint           ruff + black --check + mypy (backend)"
+	@echo "  format         black + ruff --fix (backend)"
+	@echo "  typecheck      mypy strict (backend)"
+	@echo "  backend        run FastAPI on :8000"
+	@echo "  frontend       run Vite dev server on :5174"
+	@echo "  frontend-build build the React app (tsc + vite build)"
+	@echo "  synthetic      generate a 20-doc synthetic dossier"
+	@echo "  services-up    docker compose up (Ollama, Redis, Neo4j) via infra/docker"
 	@echo "  services-down  docker compose down"
-	@echo "  clean          remove caches, build artifacts, output/"
+	@echo "  clean          remove caches + build artifacts"
 
 install:
-	poetry install
-	poetry run pre-commit install
+	cd backend && python -m pip install -e ".[all]"
+	python -m pre_commit install
 
 test:
-	poetry run pytest
+	cd backend && python -m pytest
 
 test-fast:
-	poetry run pytest -m "not slow and not integration"
+	cd backend && python -m pytest -m "not slow and not integration" --no-cov
 
 lint:
-	poetry run ruff check .
-	poetry run black --check .
-	poetry run mypy src
+	cd backend && python -m ruff check src tests scripts
+	cd backend && python -m black --check src tests scripts
+	cd backend && python -m mypy src/hyperlink_engine
 
 format:
-	poetry run black .
-	poetry run ruff check --fix .
+	cd backend && python -m black src tests scripts
+	cd backend && python -m ruff check --fix src tests scripts
 
 typecheck:
-	poetry run mypy src
+	cd backend && python -m mypy src/hyperlink_engine
 
-coverage:
-	@echo "Open coverage_html/index.html in a browser"
+backend:
+	cd backend && python -m uvicorn hyperlink_engine.api.app:app --reload --port 8000 --host 0.0.0.0
+
+frontend:
+	cd frontend && npm run dev
+
+frontend-build:
+	cd frontend && npm run build
 
 synthetic:
-	poetry run python -m scripts.bootstrap_synthetic_data --out data/synthetic --docs 20
-
-synthetic-extended:
-	poetry run python -m scripts.bootstrap_synthetic_data --out data/synthetic --docs 30
-
-spike:
-	poetry run hyperlink-engine spike \
-		--input data/synthetic/m2/2-5-clin-overview/2-5-clin-overview.docx \
-		--output output/2-5-clin-overview_linked.docx \
-		--report output/2-5-clin-overview_report.csv
-
-spike-inspect:
-	poetry run hyperlink-engine inspect \
-		--input data/synthetic/m2/2-5-clin-overview/2-5-clin-overview.docx
+	cd backend && python -m scripts.bootstrap_synthetic_data --out data/synthetic --docs 20
 
 services-up:
-	docker compose up -d
+	docker compose -f infra/docker/docker-compose.yml up -d
 
 services-down:
-	docker compose down
+	docker compose -f infra/docker/docker-compose.yml down
 
 clean:
-	rm -rf .pytest_cache .mypy_cache .ruff_cache .hypothesis coverage_html \
-	       output __pycache__ src/**/__pycache__ tests/**/__pycache__
+	rm -rf backend/.pytest_cache backend/.mypy_cache backend/.ruff_cache backend/.hypothesis \
+	       backend/coverage_html backend/output

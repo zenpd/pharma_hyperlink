@@ -24,8 +24,7 @@ wheels/
 MANIFEST
 
 # ── Poetry / pip ────────────────────────────────────────────────────────
-poetry.lock
-# (we DO want poetry.lock tracked in real projects; uncomment if locking)
+# poetry.lock IS tracked (committed) for reproducible installs.
 
 # ── Virtualenvs ─────────────────────────────────────────────────────────
 .venv/
@@ -78,10 +77,10 @@ audit.jsonl
 *.log
 
 # ── Generated data ──────────────────────────────────────────────────────
-data/synthetic/
-data/training/checkpoints/
-data/samples/  # exclude until provenance manifest committed
-!data/samples/.gitkeep
+backend/data/synthetic/
+backend/data/training/checkpoints/
+backend/data/samples/  # exclude until provenance manifest committed
+!backend/data/samples/.gitkeep
 
 # ── Model artifacts ─────────────────────────────────────────────────────
 models/

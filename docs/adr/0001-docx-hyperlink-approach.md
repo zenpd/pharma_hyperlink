@@ -157,7 +157,7 @@ class DocxLinker:
     def save(self) -> None: ...  # validates + writes; raises on style mutation
 ```
 
-Detailed implementation lives in `src/hyperlink_engine/injection/docx_linker.py` (W1.5 spike).
+Detailed implementation lives in `backend/src/hyperlink_engine/core/injection/docx_linker.py` (W1.5 spike).
 
 ---
 

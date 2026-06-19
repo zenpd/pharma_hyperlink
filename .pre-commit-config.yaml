@@ -1,5 +1,6 @@
 # Pre-commit hooks for the Hyperlink Engine.
-# Install with: poetry run pre-commit install
+# Install with: pre-commit install   (run from the repo root)
+# Python sources live under backend/.
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -31,7 +32,7 @@ repos:
     rev: v1.11.0
     hooks:
       - id: mypy
-        files: ^src/
+        files: ^backend/src/
         additional_dependencies:
           - pydantic>=2.7
           - pydantic-settings>=2.4
@@ -41,7 +42,7 @@ repos:
     hooks:
       - id: pytest-collect
         name: pytest --collect-only (smoke)
-        entry: poetry run pytest --collect-only -q
+        entry: bash -c 'cd backend && python -m pytest --collect-only -q'
         language: system
         pass_filenames: false
         always_run: true

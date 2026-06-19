@@ -20,10 +20,12 @@ for the changes it makes.
 In scope: every link injection, anomaly flag, HA-rule evaluation, and
 file write.
 
-Out of scope (POC): user-account management, training records,
-network-time-protocol sync, OS-level access control. These remain the
-responsibility of the hosting environment (SunPharma VPC / Celegence
-infra).
+Out of scope (POC): training records, network-time-protocol sync,
+OS-level access control. These remain the responsibility of the hosting
+environment (SunPharma VPC / Celegence infra). User-account management
+moved **in scope** with PLAN SEVEN: accounts, sessions and roles are
+managed by a self-hosted SuperTokens core + Postgres
+(see `docs/auth-supertokens.md`).
 
 ---
 
@@ -34,10 +36,10 @@ infra).
 | (a) Validation | "Validation of systems to ensure accuracy, reliability, consistent intended performance…" | Phase 2 acceptance gate (`scripts/phase2_acceptance.py`) and unit-test coverage gate (≥85%) provide ongoing evidence. Full IQ/OQ/PQ in Phase 4. |
 | (b) Record copies | "Generation of accurate and complete copies of records…" | The pipeline always writes `<doc>.linked.docx` / `<doc>.linked.pdf` **copies**; source files are never mutated (`tests/unit/test_pipeline_tasks.py::test_inject_links_never_mutates_source`). |
 | (c) Protection | "Protection of records to enable accurate and ready retrieval throughout the records retention period…" | `audit.jsonl` is append-only; operators rotate it via OS scheduler (recommended: daily). Output directories are never deleted by the engine. |
-| (d) Access | "Limiting system access to authorized individuals…" | OS-level; engine logs `actor` field per event but does not enforce auth. |
+| (d) Access | "Limiting system access to authorized individuals…" | **Enforced since PLAN SEVEN** (when `HYPERLINK_AUTH_ENABLED=true`): SuperTokens email+password login with httpOnly cookie sessions; every `/api/**` route except health + auth requires a verified session (401 otherwise). The audit `actor` field carries the authenticated user id. The gate is runtime-togglable by an admin (Security toggle, itself audit-logged). |
 | (e) **Audit trail** | "Use of secure, computer-generated, time-stamped audit trails to independently record the date and time of operator entries and actions that create, modify, or delete electronic records…" | Implemented in `audit/trail.py`. See § 4 below. |
 | (f) Sequencing | "Use of operational system checks to enforce permitted sequencing of steps and events…" | The Celery + threaded batch runner enforces stage order (ingestion → detection → injection → validation → reporting). Out-of-sequence calls raise `KeyError` from `get_task()`. |
-| (g) Authority checks | "Use of authority checks to ensure that only authorized individuals can use the system…" | Phase 4 (OAuth/SAML hookup). POC uses env-based credentials only. |
+| (g) Authority checks | "Use of authority checks to ensure that only authorized individuals can use the system…" | **Role-based authority checks implemented** (PLAN SEVEN): `admin` / `user` roles with a `read:classified` permission; classified runs are filtered from lists and return 403 on all 22 run-scoped endpoints for non-cleared users; review approvals / compliance sign-offs and the Security toggle require the appropriate role. SSO/SAML federation to the corporate directory remains Phase 4. |
 | (h) Device checks | "Use of device checks to determine, as appropriate, the validity of the source of data input or operational instruction…" | Inputs go through Pydantic validators (`models.py`); malformed payloads raise `ValidationError` before any side effect. |
 | (i) Training | "Determination that persons who develop, maintain, or use electronic record/electronic signature systems have the education, training, and experience to perform their assigned tasks…" | Operator responsibility — outside engine scope. |
 | (j) Written policies | "Establishment of, and adherence to, written policies that hold individuals accountable…" | Customer SOP scope (SunPharma). |
@@ -80,6 +82,7 @@ Every event with a side effect:
 | `ha_rule_violation`     | HA rule engine emitted a violation        |
 | `report_written`        | CSV / XLSX report was persisted           |
 | `readiness_scored`      | Readiness score computed                  |
+| `security_mode_changed` | An admin flipped the runtime Security toggle (PLAN SEVEN) |
 
 Each line carries the actor, action, target document, before/after
 sha256 hashes (when relevant), and a `details` dict for action-specific
@@ -97,7 +100,7 @@ records-management SOP (typically ≥5 years post-submission).
 
 | Principle      | Engine implementation |
 |----------------|------------------------|
-| **A**ttributable | Every audit line carries `actor` (system or user). |
+| **A**ttributable | Every audit line carries `actor`; with auth ON this is the real SuperTokens user id of the logged-in operator (engine-internal events stay `system:hyperlink-engine`). |
 | **L**egible | JSON-Lines + structured logging — human and machine readable. |
 | **C**ontemporaneous | Audit timestamp is set at emit time, not at batch-flush. |
 | **O**riginal | Sources are never mutated; outputs are explicit copies. |
@@ -151,6 +154,9 @@ records-management SOP (typically ≥5 years post-submission).
 1. Live electronic-signature wiring (currently `signature_id: null`).
 2. Hash-chain field on audit lines (currently relies on OS file integrity).
 3. Real PDF/A verifier (currently the `is_pdf_a` flag is a heuristic).
-4. Live SAML/OAuth authentication for the dashboard.
+4. SSO/SAML federation to the corporate directory (email+password auth with
+   roles **is live** via self-hosted SuperTokens — see `docs/auth-supertokens.md`;
+   the gap is directory integration, password/lockout policy, and locking the
+   runtime Security toggle behind ops/break-glass in production).
 5. Full IQ/OQ/PQ qualification package.
 6. Per-user training records integration.

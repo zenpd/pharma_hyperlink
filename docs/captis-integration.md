@@ -113,7 +113,7 @@ The script:
 
 ### Read-side (engine → CAPTIS)
 * File system: `data/training/`, `models/ner_v*/meta.yaml`
-* Optional: `GET /api/training-data/manifest` exposed by `dashboard/api.py` lists available JSONL bundles for CAPTIS to pull.
+* Optional: `GET /api/training-data/manifest` exposed by the FastAPI app `hyperlink_engine.api.app` (`api/app.py`) lists available JSONL bundles for CAPTIS to pull.
 
 ### Write-side (CAPTIS → engine)
 * File system: drop a directory under `/var/captis-drop/` watched by the

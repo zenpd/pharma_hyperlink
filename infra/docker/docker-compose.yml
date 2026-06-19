@@ -1,0 +1,78 @@
+version: "3.9"
+
+# Local dev services for the Hyperlink Engine.
+#
+# Phase 1 only needs Ollama. Redis + Neo4j come online in Phase 2.
+# All services bind to localhost — no external exposure.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: hyperlink-ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    # First-time model pull:
+    #   docker exec -it hyperlink-ollama ollama pull llama3.1:8b
+
+  redis:
+    image: redis:7-alpine
+    container_name: hyperlink-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+
+  neo4j:
+    image: neo4j:5-community
+    container_name: hyperlink-neo4j
+    ports:
+      - "127.0.0.1:7474:7474"  # HTTP
+      - "127.0.0.1:7687:7687"  # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/changeme
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    restart: unless-stopped
+
+  # ── Auth (PLAN SEVEN) — SuperTokens self-hosted: core + its Postgres ──
+  # Brought online in Phase 1. Both bind to localhost only; no external
+  # exposure. The core stores users/sessions/roles in supertokens-db so no
+  # identity data ever leaves the VPC.
+  supertokens-db:
+    image: postgres:16-alpine
+    container_name: hyperlink-supertokens-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-supertokens}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-supertokens}
+    volumes:
+      - supertokens_db_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  supertokens-core:
+    # Pin a concrete tag before production (e.g. supertokens-postgresql:9.x).
+    image: registry.supertokens.io/supertokens/supertokens-postgresql:latest
+    container_name: hyperlink-supertokens
+    depends_on:
+      - supertokens-db
+    ports:
+      - "127.0.0.1:3567:3567"
+    environment:
+      POSTGRESQL_CONNECTION_URI: "postgresql://${POSTGRES_USER:-supertokens}:${POSTGRES_PASSWORD:-changeme}@supertokens-db:5432/${POSTGRES_DB:-supertokens}"
+      # Shared secret with the FastAPI backend (HYPERLINK_SUPERTOKENS_API_KEY).
+      API_KEYS: "${HYPERLINK_SUPERTOKENS_API_KEY:-}"
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  redis_data:
+  neo4j_data:
+  neo4j_logs:
+  supertokens_db_data:

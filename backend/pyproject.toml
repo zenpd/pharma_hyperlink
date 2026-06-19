@@ -47,6 +47,9 @@ neo4j = "^5.23.0"  # Non-optional — required for persistence, prevents silent 
 # Orchestration — real LangGraph state machine (graceful fallback if absent)
 langgraph = "^0.3.0"
 
+# Auth (PLAN SEVEN — SuperTokens self-hosted; optional, install with -E auth)
+supertokens-python = { version = "^0.31.0", optional = true }
+
 # Foundations
 pydantic = "^2.7.0"
 pydantic-settings = "^2.4.0"
@@ -73,6 +76,7 @@ viewers = ["playwright"]
 api = ["fastapi", "uvicorn"]
 pipeline = ["celery", "redis"]
 graph = ["neo4j"]
+auth = ["supertokens-python"]
 all = [
     "ollama",
     "sentence-transformers",
@@ -83,6 +87,7 @@ all = [
     "redis",
     "neo4j",
     "litellm",
+    "supertokens-python",
 ]
 
 [tool.poetry.scripts]

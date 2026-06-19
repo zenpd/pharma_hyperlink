@@ -16,13 +16,13 @@ Input → [Ingestion] → [Parsing] → [Detection] → [Injection] → [Validat
                                    [eCTD Graph] ←──────────── [Audit Log]
 ```
 
-Each layer is implemented as a Python package under `src/hyperlink_engine/`. Stage-to-stage data flows through Pydantic models (typed contracts, validated at runtime). The pipeline orchestrator (Celery, Layer 6.5) schedules per-document tasks; the eCTD graph (graph/) is a cross-cutting service accessed by detection, injection, and validation.
+Each layer is implemented as a Python package under `backend/src/hyperlink_engine/`. Stage-to-stage data flows through Pydantic models (typed contracts, validated at runtime). The pipeline orchestrator (Celery, Layer 6.5) schedules per-document tasks; the eCTD graph (graph/) is a cross-cutting service accessed by detection, injection, and validation.
 
 ---
 
 ## 2. Layer Responsibilities
 
-### Layer 1 — Ingestion (`src/hyperlink_engine/ingestion/`)
+### Layer 1 — Ingestion (`backend/src/hyperlink_engine/core/ingestion/`)
 
 | Module | Responsibility | External lib |
 |---|---|---|
@@ -33,7 +33,7 @@ Each layer is implemented as a Python package under `src/hyperlink_engine/`. Sta
 
 **Contract:** every loader returns a typed Pydantic model with provenance (source path, hash, ingest timestamp). Loaders are **stateless** and **side-effect-free** (except local-only metadata caching).
 
-### Layer 2 — Parsing (`src/hyperlink_engine/parsing/`)
+### Layer 2 — Parsing (`backend/src/hyperlink_engine/core/parsing/`)
 
 | Module | Responsibility |
 |---|---|
@@ -43,11 +43,11 @@ Each layer is implemented as a Python package under `src/hyperlink_engine/`. Sta
 
 **Contract:** parsers consume Layer-1 outputs and emit `ParsedDocument` with a location-addressable token stream. Every token carries enough context to inject a hyperlink at exactly that position later (paragraph index, run index, character offset).
 
-### Layer 3 — Detection (`src/hyperlink_engine/detection/`)
+### Layer 3 — Detection (`backend/src/hyperlink_engine/core/detection/`)
 
 | Module | Responsibility |
 |---|---|
-| `regex_patterns.py` | `PatternRegistry`: 29 patterns from `docs/pattern-catalog.md` |
+| `regex_patterns.py` | `default_registry()` wires **17 active patterns / 9 reference types** (a subset of the design families catalogued in `docs/pattern-catalog.md`) — incl. document-type **`DOC_REF`** ("the protocol"/"the SAP"/"the CSR") that links real Protocol↔SAP↔CSR PDF pairs |
 | `ner_model.py` | Custom spaCy NER (Week 3) — entity labels per pattern catalog |
 | `llm_disambiguator.py` | Local Llama 3.1 via Ollama; only invoked on low-confidence or conflict |
 | `entity_extractor.py` | Merge regex + NER outputs; apply conflict resolution (catalog §8) |
@@ -56,18 +56,18 @@ Each layer is implemented as a Python package under `src/hyperlink_engine/`. Sta
 
 **Constraint:** LLM is **local-only** (Ollama / vLLM). No external API calls — required for 21 CFR Part 11 compliance.
 
-### Layer 4 — Injection (`src/hyperlink_engine/injection/`)
+### Layer 4 — Injection (`backend/src/hyperlink_engine/core/injection/`)
 
 | Module | Responsibility |
 |---|---|
 | `docx_linker.py` | Build `w:hyperlink` XML; inject at exact run location; preserve styling |
-| `pdf_linker.py` | Create PDF link annotations + named destinations |
+| `pdf_linker.py` | Create PDF link annotations + named destinations; clickable rect sized to the matched phrase (parity with docx run-level links) |
 | `ectd_xref.py` | Inject backbone XML cross-references (Phase 2+) |
 | `style_preserver.py` | Whitelist Dosscriber-specific styles; diff-check post-injection |
 
 **Invariant:** never mutate the input document. Always emit `_linked.docx` / `_linked.pdf` copies. Original file hash captured in audit log so QA can verify zero-mutation.
 
-### Layer 5 — Validation (`src/hyperlink_engine/validation/`)
+### Layer 5 — Validation (`backend/src/hyperlink_engine/core/validation/`)
 
 | Module | Responsibility |
 |---|---|
@@ -78,29 +78,45 @@ Each layer is implemented as a Python package under `src/hyperlink_engine/`. Sta
 
 **Output:** `ValidationReport` with one record per link + one anomaly list per document. Feeds Layer 6 directly.
 
-### Layer 6 — Dashboard & Reporting (`src/hyperlink_engine/dashboard/`, `reporting/`)
+### Layer 6 — Dashboard & Reporting (`backend/src/hyperlink_engine/dashboard/`, `reporting/`)
 
 | Module | Responsibility |
 |---|---|
-| `dashboard/api.py` | FastAPI backend; exposes `/api/dossiers/{id}/*` endpoints |
-| `dashboard/streamlit_app.py` | POC dashboard (Weeks 5–8) |
-| `dashboard/react_frontend/` | Production dashboard (Phase 3, Week 12) |
+| `api/app.py` | FastAPI backend; pipeline, review, compliance, dossier and export endpoints |
+| `api/middleware/` | Auth core: SuperTokens init, `auth_guard`, `Principal`, classified-access gate, Security toggle (PLAN SEVEN) |
+| `../frontend/` (React + Vite, :5174) | The live dashboard SPA |
+| `dashboard/react_frontend/` | Paused earlier React scaffold (kept for reference) |
 | `reporting/readiness_score.py` | Configurable weighted scoring |
 | `reporting/csv_exporter.py` | One-row-per-link export |
 | `reporting/xlsx_exporter.py` | Conditional-formatted bulk export + pivot tab |
+
+**Run Compare UI (React dashboard).** The before/after compare widget is a
+**3-pane** layout — **BEFORE | AFTER | Linked-Documents viewer list**. Word **and
+PDF** tables render as **real HTML grids** in both panels and in the focused
+Reference View: the preview endpoints emit structured blocks via
+`api/app.py::_read_doc_blocks` — `_read_docx_blocks` for `.docx` and
+`_read_pdf_blocks` for `.pdf` (ruled tables via PyMuPDF's *lines* strategy) — as
+`{type:"paragraph",text}` / `{type:"table",rows,text}` instead of flattened
+`" | "` text. The viewer list and link routing are format-agnostic
+(`_linked.(docx|pdf)`), so PDF runs populate the Linked-Documents pane too. Each link carries an authoritative **`link_kind`** (set by
+`orchestration/nodes.py::node_validate`: `external_url` / `cross_doc` /
+`internal_bookmark` / `cross_module`); a single shared frontend helper
+(`externalUrl`/`isExternalLink`) guarantees **external web links always open in a
+new tab** and never route into the Reference View, while cross-doc links open the
+Reference View and internal refs scroll-and-flash in place.
 
 ---
 
 ## 3. Cross-Cutting Services
 
-### Graph Service (`src/hyperlink_engine/graph/`)
+### Graph Service (`backend/src/hyperlink_engine/core/graph/`)
 
 - **Phase 1:** NetworkX in-memory; suitable for ≤100 documents
 - **Phase 2+:** Neo4j (persistent); query via Cypher for "find all docs referencing Study X"
 - Nodes = leaves; edges = explicit refs + structural parent-child
 - Consumers: detection (resolve targets), injection (cross-module routing), validation (cycle detection)
 
-### Configuration (`src/hyperlink_engine/config/`)
+### Configuration (`backend/src/hyperlink_engine/config/`)
 
 - `settings.py` — Pydantic Settings; reads env (`OLLAMA_HOST`, `NEO4J_URI`, `REDIS_URL`, log level)
 - `ha_rules.yaml` — region-specific HA constraints (FDA, EMA, PMDA, Health Canada, ANVISA)
@@ -111,7 +127,22 @@ Each layer is implemented as a Python package under `src/hyperlink_engine/`. Sta
 - Audit log appended to `audit.jsonl` per dossier — immutable, append-only
 - Phase 3: ship to Splunk / Elastic for compliance retention
 
-### Pipeline Orchestration (`src/hyperlink_engine/pipeline/`)
+### Auth & Classified Access (`backend/src/hyperlink_engine/api/middleware/`) — PLAN SEVEN
+
+- **Identity:** self-hosted **SuperTokens** (core container :3567 + its own Postgres);
+  email+password login, httpOnly cookie sessions, `admin`/`user` roles. The SDK's ASGI
+  middleware serves `/api/auth/*`; everything else passes through the global
+  `auth_guard` dependency (gate ON + no session → 401).
+- **Classification gate:** every run carries `classification` (`classified`/`unclassified`,
+  deny-by-default `classified`) + `owner`, persisted on the Neo4j `Run` node. Non-cleared
+  users get classified runs filtered from lists and **403** from all 22 run-scoped
+  endpoints (`require_classified_access`).
+- **Security toggle:** `GET/POST /api/security/mode` — an admin can flip the whole gate
+  at runtime; the change is audit-logged and persisted across restarts.
+- Auth is **OFF by default** (`HYPERLINK_AUTH_ENABLED=false`); the test suite never needs
+  a live core. Full design + verification: `docs/auth-supertokens.md`.
+
+### Pipeline Orchestration (`backend/src/hyperlink_engine/workers/`)
 
 - Celery + Redis (broker + result backend); RabbitMQ as production alternative
 - Queues: `ingestion`, `detection`, `injection`, `validation`, `reporting`

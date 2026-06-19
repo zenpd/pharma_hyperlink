@@ -41,8 +41,32 @@ Each pattern entry contains:
 | `CTD_LEAF_*` | CTD module/leaf path references | 4 variants |
 | `MODULE_PTR_*` | Cross-module narrative pointers | 3 variants |
 | `EXT_REF_*` | External references (URLs, DOIs, guidelines) | 3 variants |
+| `DOC_REF_*` | Document-type cross-references ("the protocol", "the SAP") | 3 variants |
 
-Total: **29 distinct patterns** in v1.
+Total: **29 distinct patterns** in v1 (+ the `DOC_REF_*` family added in PLAN NINE for
+production Protocol/SAP/CSR PDF sets, which cross-reference each other by document type in
+prose rather than by a study-id citation).
+
+> **Designed vs. active:** this catalog is the *design inventory*. The shipped
+> `default_registry()` currently wires **22 patterns across 11 labels** — `STUDY_ID`,
+> `SECTION_REF`, `TABLE_REF`, `FIGURE_REF`, `LISTING_REF`, `APPENDIX_REF`, `CTD_LEAF`,
+> `URL`, `DOC_REF`, `EXT_REF`, and `VISIT_REF`. `VISIT_REF_V1` (scheduled-visit
+> cross-references: "Week 2 Visit", "Day 1/Randomization Visit", "Month 3 visit")
+> requires the literal word "Visit" so bare timepoints ("at Week 2", "Week 2 sUA
+> level") are not matched, and resolves to the matching visit section ("9.3.3.1
+> Week 2") via `anchor_index.canonical_visit_key` + the document ToC. The `EXT_REF`
+> family (`EXT_REF_ICH_V1`,
+> `EXT_REF_CFR_V1`, `EXT_REF_HELSINKI_V1`, `EXT_REF_DOI_V1`) was activated after the
+> real ClinicalTrials NCT01101035 Protocol/SAP analysis confirmed ICH / CFR /
+> Declaration-of-Helsinki citations; each resolves to a stable public URL in
+> `tasks._resolve_target`. The `MODULE_PTR_*` family remains catalogued but inactive.
+> Verify with
+> `python -c "from hyperlink_engine.core.detection.regex_patterns import default_registry as r; print(len(r()))"`.
+>
+> **Precision fix (NCT01101035 SAP):** `CTD_LEAF_PATH_V1` now requires the `/path`
+> segment after the module digit — a bare `m2` inside unit strings like `kg/m2`
+> (BMI) was previously a false positive. Narrative "Module 2" mentions are still
+> caught by `CTD_LEAF_MODULE_V1`.
 
 ---
 
@@ -223,6 +247,33 @@ Total: **29 distinct patterns** in v1.
 | **FP risks** | Medium — needs context check that we're in a regulatory document |
 | **Target resolution** | Same as 3.1 |
 | **Cross-module?** | Sometimes (EMA-specific) |
+
+> **Implemented (PLAN NINE):** `APPENDIX_REF_LETTER_V1` — `\bAppendix\s+(?P<num>[A-Z])\b`
+> (conf. 0.93, label `APPENDIX_REF`) — catches "Appendix A" / "Appendix B" that the
+> numbered pattern misses. Common in clinical protocols.
+
+---
+
+## 3b. Document-Type Cross-References (`DOC_REF_*`) — PLAN NINE
+
+Real Protocol/SAP/CSR PDFs reference each other by **document type in prose** ("based on
+Version 7 of **the protocol**", "as defined in **the Statistical Analysis Plan**"), never by a
+study-id citation. These three high-precision patterns capture that signal; the resolver
+(`orchestration/nodes.py`) routes each hit to the **same study's** sibling document.
+
+| ID | Regex (label `DOC_REF`) | Conf. | Notes |
+|---|---|---|---|
+| `DOC_REF_PROTOCOL_V1` | `(?:the\|study\|clinical\|trial)\s+protocol` **or** `protocol\s+(?:version\|v\.?\s?\d\|section)`, with a negative lookahead for `deviation\|set\|violation\|waiver` | 0.70 | Rejects "protocol deviation", "per protocol set", "protocol-specified" |
+| `DOC_REF_SAP_V1` | `(?:the\|this\|study)\s+(?:Statistical Analysis Plan\|SAP)` | 0.68 | Determiner-gated to skip self-title banners |
+| `DOC_REF_CSR_V1` | `(?:the\|this\|study)\s+(?:Clinical Study Report\|CSR)` | 0.68 | Forward-compat for CSR PDFs |
+
+- **FP control:** determiner/version qualifier required + negative lookahead. A 45-page SAP
+  yields a handful of high-quality cross-doc links to its protocol, not ~26 noisy ones.
+- **Resolution:** a `DOC_REF` whose source is `NCT04089566_SAP` resolves "the protocol" to
+  `NCT04089566_Protocol`; if the same-study sibling is absent it links only when exactly one
+  document of that type exists in the batch, otherwise it is left unlinked (never cross-study).
+- **Unresolved `DOC_REF` is dropped before injection** so a doc-type mention with no sibling
+  in the batch never becomes a broken anchor.
 
 ---
 
