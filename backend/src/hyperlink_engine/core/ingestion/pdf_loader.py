@@ -2,8 +2,14 @@
 
 PyMuPDF (`fitz`) is the primary engine for text, links, and named destinations.
 `pdfplumber` is wired as a fallback specifically for complex table extraction;
-Phase 1 only exposes a hook that the parser may call when PyMuPDF returns no
-text for a page (defensive coverage for scanned / image-heavy PDFs).
+it is called when PyMuPDF returns no text for a page (defensive coverage for
+scanned / image-heavy PDFs).
+
+Layer 1.5 — OCR:
+When both PyMuPDF and pdfplumber return empty text (scanned/image-only page),
+``page_text_via_ocr()`` renders the page to an image and runs Tesseract or
+EasyOCR. The OCR path is gated by ``HYPERLINK_OCR_ENABLED=true`` and is
+completely optional — missing OCR deps are logged and silently skipped.
 """
 
 from __future__ import annotations
@@ -109,3 +115,55 @@ def page_text_via_pdfplumber(path: Path, page_index: int) -> str:
         if page_index >= len(pdf.pages):
             raise PdfLoadError(f"page_index {page_index} out of range for {path}")
         return pdf.pages[page_index].extract_text() or ""
+
+
+def page_text_via_ocr(
+    page: "fitz.Document",
+    page_index: int,
+    *,
+    engine: str = "tesseract",
+    language: str = "eng",
+    dpi: int = 300,
+    min_confidence: float = 0.5,
+) -> str:
+    """OCR fallback — Layer 1.5.
+
+    Renders a fitz.Page to an image (at ``dpi`` DPI) and runs the selected OCR
+    engine. Returns the extracted text, or an empty string if OCR is unavailable
+    or produces no output. This is intentionally tolerant — missing OCR deps are
+    logged as warnings and never raise to the caller.
+
+    Args:
+        page:           A live fitz.Page object (not the Document).
+        page_index:     0-based page index (for logging only).
+        engine:         ``"tesseract"`` or ``"easyocr"``.
+        language:       Tesseract lang code (``"eng"``) or comma-separated
+                        EasyOCR languages (``"en,fr"``).
+        dpi:            Render resolution. 300 is standard for regulatory docs.
+        min_confidence: Discard OCR words below this confidence (0.0 – 1.0).
+    """
+    from hyperlink_engine.core.ingestion.ocr_processor import (
+        OcrError,
+        OcrNotAvailableError,
+        ocr_pdf_page,
+    )
+
+    try:
+        result = ocr_pdf_page(
+            page,
+            page_index,
+            engine=engine,
+            language=language,
+            dpi=dpi,
+            min_confidence=min_confidence,
+        )
+        return result.text
+    except OcrNotAvailableError as exc:
+        _log.warning("ocr_not_available", page_index=page_index, reason=str(exc))
+        return ""
+    except OcrError as exc:
+        _log.warning("ocr_failed", page_index=page_index, reason=str(exc))
+        return ""
+    except Exception as exc:  # pragma: no cover — unexpected engine failure
+        _log.error("ocr_unexpected_error", page_index=page_index, error=str(exc))
+        return ""

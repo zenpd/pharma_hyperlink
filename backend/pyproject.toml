@@ -53,6 +53,13 @@ langgraph = "^0.3.0"
 # Auth (PLAN SEVEN — SuperTokens self-hosted; optional, install with -E auth)
 supertokens-python = { version = "^0.31.0", optional = true }
 
+# OCR (scanned PDFs + standalone image documents; optional, install with -E ocr)
+# "tesseract" engine: pytesseract + Pillow (also requires Tesseract system binary)
+# "easyocr" engine:  easyocr + numpy (deep-learning, no system binary required)
+pytesseract = { version = "^0.3.0", optional = true }
+easyocr = { version = "^1.7", optional = true }
+Pillow = { version = "^10.0", optional = true }
+
 # Foundations
 pydantic = "^2.7.0"
 pydantic-settings = "^2.4.0"
@@ -92,7 +99,6 @@ all = [
     "neo4j",
     "litellm",
     "supertokens-python",
-    "gliner",
 ]
 
 [tool.poetry.scripts]
@@ -160,6 +166,9 @@ module = [
     "networkx.*",
     "ollama.*",
     "structlog.*",
+    "pytesseract.*",
+    "easyocr.*",
+    "PIL.*",
 ]
 ignore_missing_imports = true
 

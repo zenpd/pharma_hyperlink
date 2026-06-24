@@ -160,6 +160,52 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(default="INFO")
     log_format: Literal["json", "console"] = Field(default="json")
 
+    # ── OCR (scanned PDFs & image documents) ───────────────────────────
+    # Master switch — OFF by default; enable with HYPERLINK_OCR_ENABLED=true.
+    ocr_enabled: bool = Field(
+        default=False,
+        description="Enable OCR for scanned PDFs and standalone image files.",
+    )
+    # Engine: "tesseract" requires Tesseract binary + pytesseract + Pillow;
+    # "easyocr" requires easyocr (deep-learning, CPU-only, no system binary).
+    ocr_engine: Literal["tesseract", "easyocr"] = Field(
+        default="tesseract",
+        description="OCR engine to use when text extraction fails.",
+    )
+    # Tesseract language code (e.g. "eng", "deu", "fra+eng").
+    # For EasyOCR pass a comma-separated list of codes (e.g. "en,de").
+    ocr_language: str = Field(
+        default="eng",
+        description="Tesseract lang code or comma-separated EasyOCR language list.",
+    )
+    # Higher DPI → better OCR quality but slower and larger memory footprint.
+    # 300 is the industry standard for regulatory documents; 150 for quick passes.
+    ocr_dpi: int = Field(
+        default=300,
+        gt=0,
+        description="DPI used when rendering a PDF page to an image for OCR.",
+    )
+    # Per-word confidence gate — words below this threshold are discarded.
+    ocr_min_confidence: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Minimum per-word OCR confidence (0.0–1.0) to include in output.",
+    )
+    # When True (default), OCR fires automatically on any page that has no
+    # extractable text (image-only/scanned PDF pages). When False, OCR is only
+    # triggered explicitly (e.g., by the API upload endpoint with ocr=true).
+    ocr_fallback_on_empty_page: bool = Field(
+        default=True,
+        description="Auto-OCR pages where PyMuPDF + pdfplumber both return no text.",
+    )
+    # File extensions treated as standalone image documents (fed through OCR).
+    # These are ingested as single-page pseudo-PDFs and produce OcrPageResult text.
+    ocr_image_extensions: list[str] = Field(
+        default_factory=lambda: [".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".webp"],
+        description="File extensions recognised as scannable image documents.",
+    )
+
     # ── Compliance ─────────────────────────────────────────────────────
     enforce_local_llm_only: bool = Field(
         default=True,

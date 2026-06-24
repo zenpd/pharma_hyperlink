@@ -17,9 +17,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from hyperlink_engine.config.logging_setup import get_logger
+from hyperlink_engine.config.settings import get_settings
 from hyperlink_engine.core.ingestion.pdf_loader import (
     LoadedPdf,
     load_pdf,
+    page_text_via_ocr,
     page_text_via_pdfplumber,
 )
 from hyperlink_engine.models import (
@@ -136,17 +138,23 @@ def parse_pdf_document(loaded: LoadedPdf) -> PdfDocument:
     pages_out: list[PdfPage] = []
     existing_links: list[PdfLinkAnnotation] = []
 
+    cfg = get_settings()
+
     for page_index in range(document.page_count):
         page = document.load_page(page_index)
         page_dict = page.get_text("dict")
         blocks_out: list[PdfBlock] = []
+        has_image_blocks = False
+
         for b_idx, block in enumerate(page_dict.get("blocks", [])):
             # PyMuPDF marks image blocks with "type": 1; we keep only text blocks (type 0).
             if block.get("type", 0) != 0:
+                has_image_blocks = True  # signal a potentially scanned page
                 continue
             blocks_out.append(_parse_block(block, b_idx))
 
-        # Fallback: if PyMuPDF found no text on this page, try pdfplumber for the raw text.
+        # ── Tier 2 fallback: pdfplumber ──────────────────────────────────────
+        # Triggered when PyMuPDF found no text (page may be image-only/scanned).
         if not blocks_out:
             try:
                 fallback_text = page_text_via_pdfplumber(loaded.provenance.source_path, page_index)
@@ -161,6 +169,50 @@ def parse_pdf_document(loaded: LoadedPdf) -> PdfDocument:
                             PdfSpan(
                                 text=fallback_text,
                                 bbox=(0.0, 0.0, float(page.rect.width), float(page.rect.height)),
+                            )
+                        ],
+                    )
+                )
+
+        # ── Tier 3 fallback: OCR ─────────────────────────────────────────────
+        # Triggered when both PyMuPDF and pdfplumber returned no text AND the
+        # page contained image blocks (classic scanned-PDF signature).
+        # Gated by ocr_enabled + ocr_fallback_on_empty_page settings so this
+        # is a strict no-op when OCR is not configured.
+        if (
+            not blocks_out
+            and cfg.ocr_enabled
+            and cfg.ocr_fallback_on_empty_page
+            and has_image_blocks
+        ):
+            _log.info(
+                "pdf_ocr_fallback",
+                path=str(loaded.provenance.source_path),
+                page_index=page_index,
+                engine=cfg.ocr_engine,
+            )
+            try:
+                ocr_text = page_text_via_ocr(
+                    page,
+                    page_index,
+                    engine=cfg.ocr_engine,
+                    language=cfg.ocr_language,
+                    dpi=cfg.ocr_dpi,
+                    min_confidence=cfg.ocr_min_confidence,
+                )
+            except Exception:  # pragma: no cover — OCR failures must not crash parsing
+                ocr_text = ""
+            if ocr_text.strip():
+                blocks_out.append(
+                    PdfBlock(
+                        block_index=0,
+                        bbox=(0.0, 0.0, float(page.rect.width), float(page.rect.height)),
+                        spans=[
+                            PdfSpan(
+                                text=ocr_text,
+                                bbox=(0.0, 0.0, float(page.rect.width), float(page.rect.height)),
+                                # Mark the span so downstream code knows it is OCR-derived
+                                font_name="OCR",
                             )
                         ],
                     )

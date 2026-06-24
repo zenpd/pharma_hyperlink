@@ -85,7 +85,18 @@ def node_load_dossier(state: PipelineState) -> PipelineState:
 
 
 def node_parse_all(state: PipelineState) -> PipelineState:
-    """Parse each document (docx → paragraphs + run metadata; pdf → pages + spans)."""
+    """Parse each document (docx → paragraphs + run metadata; pdf → pages + spans).
+
+    Standalone image files (.png, .jpg, .tiff, …) are routed through OCR when
+    HYPERLINK_OCR_ENABLED=true, yielding a single pseudo-page of text. They are
+    surfaced in the pipeline as a single-page document so the detection cascade
+    can run reference extraction on the OCR output.
+    """
+    from hyperlink_engine.config.settings import get_settings as _get_settings
+
+    cfg = _get_settings()
+    ocr_exts = set(cfg.ocr_image_extensions)
+
     _emit(state, "parse_all", "running", total=len(state["ingest_records"]))
     t0 = time.time()
 
@@ -97,6 +108,8 @@ def node_parse_all(state: PipelineState) -> PipelineState:
             para_count, run_count = _parse_docx(fp)
         elif suffix == ".pdf":
             para_count, run_count = _parse_pdf(fp)
+        elif suffix in ocr_exts and cfg.ocr_enabled:
+            para_count, run_count = _parse_image_via_ocr(fp, cfg)
         else:
             para_count, run_count = 0, 0
 
@@ -154,14 +167,53 @@ def _parse_pdf(path: Path) -> tuple[int, int]:
         return 0, 0
 
 
+def _parse_image_via_ocr(path: Path, cfg: Any) -> tuple[int, int]:
+    """OCR a standalone image file; returns (1 page, word_count_as_runs).
+
+    Only called when ocr_enabled=True and the file suffix is in ocr_image_extensions.
+    Failures are swallowed so a bad image does not abort the whole pipeline run.
+    """
+    try:
+        from hyperlink_engine.core.ingestion.ocr_processor import ocr_image_file
+
+        result = ocr_image_file(
+            path,
+            engine=cfg.ocr_engine,
+            language=cfg.ocr_language,
+            min_confidence=cfg.ocr_min_confidence,
+        )
+        word_count = result.word_count if result.has_text else 0
+        _log.info(
+            "image_ocr_parse",
+            path=str(path),
+            words=word_count,
+            confidence=round(result.confidence, 3),
+        )
+        return 1, word_count
+    except Exception as exc:
+        _log.warning("image_ocr_failed", path=str(path), error=str(exc))
+        return 0, 0
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Node 3 — detect_references
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 def node_detect_references(state: PipelineState) -> PipelineState:
-    """Run the regex → NER → LLM cascade on every uploaded document."""
+    """Run the regex → NER → LLM cascade on every uploaded document.
+
+    Image files that went through OCR in node_parse_all are included here so
+    their extracted text is also scanned for pharma cross-references.
+    """
+    from hyperlink_engine.config.settings import get_settings as _get_settings
     from hyperlink_engine.workers.tasks import detect_references as _detect
+
+    cfg = _get_settings()
+    # Accepted suffixes: native formats + image types when OCR is enabled
+    accepted_suffixes = {".docx", ".pdf"}
+    if cfg.ocr_enabled:
+        accepted_suffixes.update(cfg.ocr_image_extensions)
 
     _emit(state, "detect_references", "running", total=len(state["ingest_records"]))
     t0 = time.time()
@@ -170,7 +222,7 @@ def node_detect_references(state: PipelineState) -> PipelineState:
     total_refs = 0
     for rec in state["ingest_records"]:
         suffix = Path(rec["source_path"]).suffix.lower()
-        if suffix not in (".docx", ".pdf"):
+        if suffix not in accepted_suffixes:
             continue
         try:
             result = _detect(rec)
