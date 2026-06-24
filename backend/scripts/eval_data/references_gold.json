@@ -1,0 +1,32 @@
+[
+  {
+    "name": "western_clean",
+    "body": "Outcomes were reported by Tankere, P 2022 and confirmed in Helget, LN 2024; an earlier analysis is Becker, MA 2005.",
+    "gold": [["Tankere", "2022"], ["Helget", "2024"], ["Becker", "2005"]]
+  },
+  {
+    "name": "asian_short",
+    "body": "Similar findings appear in Xu, H 2022, Ng, K 2020, Li, Q 2021, and Wu, X 2019.",
+    "gold": [["Xu", "2022"], ["Ng", "2020"], ["Li", "2021"], ["Wu", "2019"]]
+  },
+  {
+    "name": "compound_names",
+    "body": "Divergent results were noted by O'Brien, M 2019, McDonald, R 2017, and D'Souza, A 2016.",
+    "gold": [["O'Brien", "2019"], ["McDonald", "2017"], ["D'Souza", "2016"]]
+  },
+  {
+    "name": "mixed_distractors",
+    "body": "The trial Smith, J 2021 confirmed earlier data. In 2018 the agency acted; results were reviewed in March 2020. Dr. Patel discussed limitations.",
+    "gold": [["Smith", "2021"]]
+  },
+  {
+    "name": "csr_real_nct01101035",
+    "body": "The study was a randomized, double-blind, active-controlled trial comparing febuxostat and allopurinol see Helget LN, 2024. The study design is described in Study ID TMX-67_301 Section 6.1, and forms the basis of statistical analysis defined in the SAP. The study demonstrated no statistically significant difference in cardiovascular risk between febuxostat and allopurinol see literature reference Becker MA, 2005 and Schumacher HR, 2010. The hazard ratio was close to unity, and subgroup analyses confirmed consistency of results. These findings are consistent with integrated analyses presented in the ISE and ISS.",
+    "gold": [["Helget", "2024"], ["Becker", "2005"], ["Schumacher", "2010"]]
+  },
+  {
+    "name": "afatinib_real",
+    "body": "1 Basic Information. Class: Tyrosine kinase inhibitor (TKI). Brand name: Gilotrif. Route: Oral (tablet) See Tankere, P 2022. 2 Mechanism of Action. Afatinib irreversibly inhibits the ErbB family receptors, including see Chiu, CH 2015. EGFR (Epidermal Growth Factor Receptor) and HER2 (ErbB2). 3 Indications (Uses). Primarily used in Non-Small Cell Lung Cancer (NSCLC) See Ullas, B 2022. For metastatic NSCLC with EGFR mutations (exon 19 deletion, exon 21 L858R) See Table 1 - Table 3. In 2018 the FDA authorized afatinib for G719X/L861Q/S768I mutations.",
+    "gold": [["Tankere", "2022"], ["Chiu", "2015"], ["Ullas", "2022"]]
+  }
+]

@@ -1,0 +1,32 @@
+# Deprecated Study ID registry
+#
+# Add study IDs here when they are withdrawn, superseded, or otherwise
+# invalidated so the anomaly detector can flag any document that still
+# references them.
+#
+# Fields per entry:
+#   id          : exact study identifier string as it appears in documents
+#   reason      : brief human-readable explanation
+#   replaced_by : optional successor study ID (for suggested-fix message)
+#   since       : ISO date when this ID was deprecated
+#
+# The engine loads this file at start-up; no restart required if the file
+# is hot-reloaded via the CLI `--reload-deprecated` flag (Phase 3).
+
+deprecated:
+  # ── Examples / placeholders — replace with real IDs before production ──
+
+  - id: "SP-2019-001"
+    reason: "Study terminated early; results not included in submission."
+    replaced_by: null
+    since: "2021-03-15"
+
+  - id: "PROT-ABC-0001"
+    reason: "Protocol superseded by amended version."
+    replaced_by: "PROT-ABC-0002"
+    since: "2022-07-01"
+
+  - id: "NCT00000001"
+    reason: "Placeholder NCT number used in early draft; not a real registry entry."
+    replaced_by: null
+    since: "2020-01-01"

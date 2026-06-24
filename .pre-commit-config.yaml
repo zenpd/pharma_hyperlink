@@ -1,0 +1,48 @@
+# Pre-commit hooks for the Hyperlink Engine.
+# Install with: pre-commit install   (run from the repo root)
+# Python sources live under backend/.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-added-large-files
+        args: [--maxkb=2000]
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/psf/black
+    rev: 24.8.0
+    hooks:
+      - id: black
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.0
+    hooks:
+      - id: mypy
+        files: ^backend/src/
+        additional_dependencies:
+          - pydantic>=2.7
+          - pydantic-settings>=2.4
+          - types-PyYAML
+
+  - repo: local
+    hooks:
+      - id: pytest-collect
+        name: pytest --collect-only (smoke)
+        entry: bash -c 'cd backend && python -m pytest --collect-only -q'
+        language: system
+        pass_filenames: false
+        always_run: true

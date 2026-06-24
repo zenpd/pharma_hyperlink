@@ -1,0 +1,92 @@
+version: "3.9"
+
+# Production Docker Compose — Hyperlink Engine
+#
+# Usage:  docker compose -f infra/docker/docker-compose.prod.yml up -d
+#
+# Adds the backend + frontend containers on top of the dev services.
+
+services:
+  # ── Dev services (same as docker-compose.yml) ────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: hyperlink-ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: hyperlink-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+      - ../../infra/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    restart: unless-stopped
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+
+  neo4j:
+    image: neo4j:5-community
+    container_name: hyperlink-neo4j
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/changeme
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    restart: unless-stopped
+
+  # ── Application containers ──────────────────────────────────────────
+  backend:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile.backend
+    container_name: hyperlink-backend
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - ../../.env
+    depends_on:
+      - redis
+      - neo4j
+      - ollama
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile.frontend
+    container_name: hyperlink-frontend
+    ports:
+      - "127.0.0.1:80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # ── Celery worker ───────────────────────────────────────────────────
+  celery-worker:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile.backend
+    container_name: hyperlink-celery
+    command: ["python", "-m", "celery", "-A",
+              "hyperlink_engine.pipeline.celery_app:app",
+              "worker", "--loglevel=info", "--pool=solo"]
+    env_file:
+      - ../../.env
+    depends_on:
+      - redis
+      - neo4j
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  redis_data:
+  neo4j_data:
+  neo4j_logs:

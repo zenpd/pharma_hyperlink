@@ -1,0 +1,99 @@
+# Hyperlink Engine — gitignore
+
+# ── Python ──────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ── Poetry / pip ────────────────────────────────────────────────────────
+# poetry.lock IS tracked (committed) for reproducible installs.
+
+# ── Virtualenvs ─────────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── Testing & coverage ──────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+coverage_html/
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# ── Type checking ───────────────────────────────────────────────────────
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# ── Jupyter ─────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ── IDEs ────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── OS ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Environment & secrets ───────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ── Engine outputs ──────────────────────────────────────────────────────
+output/
+audit.jsonl
+*.log
+
+# ── Generated data ──────────────────────────────────────────────────────
+backend/data/synthetic/
+backend/data/training/checkpoints/
+backend/data/samples/  # exclude until provenance manifest committed
+!backend/data/samples/.gitkeep
+
+# ── Model artifacts ─────────────────────────────────────────────────────
+models/
+*.bin
+*.pt
+*.safetensors
+
+# ── Frontend (Phase 3) ──────────────────────────────────────────────────
+**/node_modules/
+**/dist/
+**/.vite/
+
+# ── Docker volumes ──────────────────────────────────────────────────────
+.docker/
+neo4j_data/
+redis_data/

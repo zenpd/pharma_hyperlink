@@ -1,0 +1,198 @@
+[tool.poetry]
+name = "hyperlink-engine"
+version = "0.0.1"
+description = "AI-Powered Hyperlink Automation & Validation Engine for regulatory dossier submissions"
+authors = ["Celegence Engineering"]
+readme = "README.md"
+license = "Proprietary"
+packages = [{ include = "hyperlink_engine", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+# Layer 1 & 2 — ingestion + parsing
+python-docx = "^1.1.2"
+pymupdf = "^1.24.0"
+pdfplumber = "^0.11.0"
+lxml = "^5.2.0"
+
+# Layer 3 — detection
+regex = "^2024.5.15"
+spacy = "^3.7.0"
+sentence-transformers = { version = "^3.0.0", optional = true }
+ollama = { version = "^0.3.0", optional = true }
+# Unified LLM gateway — one client for local Ollama + cloud providers (POC).
+litellm = { version = "^1.0", optional = true }
+# Zero-shot NER for diverse author-NAME detection in citations (PLAN NINETEEN).
+# Optional + heavy (pulls torch); reference detection falls back to regex without it.
+gliner = { version = ">=0.2.5", optional = true }
+
+# Layer 4 — injection
+pikepdf = "^9.0.0"
+pypdf = "^4.3.0"
+
+# Layer 5 — validation (Phase 2+ deps marked optional)
+playwright = { version = "^1.47.0", optional = true }
+
+# Layer 6 & cross-cutting
+fastapi = { version = "^0.115.0", optional = true }
+uvicorn = { version = "^0.30.0", optional = true }
+openpyxl = "^3.1.0"
+
+# Pipeline (Phase 2+ optional)
+celery = { version = "^5.4.0", optional = true }
+redis = { version = "^5.0.0", optional = true }
+
+# Graph (Phase 2+)
+networkx = "^3.3.0"
+neo4j = "^5.23.0"  # Non-optional — required for persistence, prevents silent failures
+
+# Orchestration — real LangGraph state machine (graceful fallback if absent)
+langgraph = "^0.3.0"
+
+# Auth (PLAN SEVEN — SuperTokens self-hosted; optional, install with -E auth)
+supertokens-python = { version = "^0.31.0", optional = true }
+
+# Foundations
+pydantic = "^2.7.0"
+pydantic-settings = "^2.4.0"
+structlog = "^24.4.0"
+python-dotenv = "^1.0.1"
+httpx = ">=0.27,<0.29"  # widened so litellm (httpx 0.28.x) can coexist
+pyyaml = "^6.0.2"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.0"
+pytest-asyncio = "^0.24.0"
+pytest-cov = "^5.0.0"
+hypothesis = "^6.112.0"
+ruff = "^0.6.0"
+black = "^24.8.0"
+mypy = "^1.11.0"
+pre-commit = "^3.8.0"
+ipykernel = "^6.29.0"
+jupyter = "^1.1.0"
+
+[tool.poetry.extras]
+llm = ["ollama", "sentence-transformers", "litellm"]
+viewers = ["playwright"]
+api = ["fastapi", "uvicorn"]
+pipeline = ["celery", "redis"]
+graph = ["neo4j"]
+auth = ["supertokens-python"]
+references = ["gliner"]
+all = [
+    "ollama",
+    "sentence-transformers",
+    "playwright",
+    "fastapi",
+    "uvicorn",
+    "celery",
+    "redis",
+    "neo4j",
+    "litellm",
+    "supertokens-python",
+    "gliner",
+]
+
+[tool.poetry.scripts]
+hyperlink-engine = "hyperlink_engine.cli:main"
+bootstrap-synthetic-data = "scripts.bootstrap_synthetic_data:main"
+
+[build-system]
+requires = ["poetry-core>=1.7"]
+build-backend = "poetry.core.masonry.api"
+
+# ─────────────────────────────────────────────────────────────────────────
+# Tooling configuration
+# ─────────────────────────────────────────────────────────────────────────
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "UP",   # pyupgrade
+    "N",    # pep8-naming
+    "SIM",  # simplify
+    "PTH",  # use pathlib
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["N802", "N803"]  # allow non-snake_case test fixtures
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+show_error_codes = true
+namespace_packages = true
+explicit_package_bases = true
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = [
+    "docx.*",
+    "fitz",
+    "pdfplumber.*",
+    "pikepdf.*",
+    "pypdf.*",
+    "regex",
+    "spacy.*",
+    "networkx.*",
+    "ollama.*",
+    "structlog.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=hyperlink_engine",
+    "--cov-report=term-missing",
+    "--cov-report=html:coverage_html",
+    "--cov-fail-under=85",
+]
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks integration tests (requires external services)",
+    "viewer: marks viewer-compatibility tests (requires Adobe SDK / Playwright)",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src/hyperlink_engine"]
+omit = [
+    "*/dashboard/react_frontend/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

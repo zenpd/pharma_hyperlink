@@ -1,0 +1,19 @@
+{
+  "synthetic_root": "data\\synthetic",
+  "seed": 42,
+  "dev_ratio": 0.15,
+  "total_examples": 178,
+  "train_examples": 152,
+  "dev_examples": 26,
+  "label_histogram": {
+    "CTD_LEAF": 169,
+    "STUDY_ID": 341,
+    "LISTING_REF": 117,
+    "APPENDIX_REF": 116,
+    "TABLE_REF": 141,
+    "SECTION_REF": 275,
+    "FIGURE_REF": 96
+  },
+  "train_path": "data\\training\\refs.train.jsonl",
+  "dev_path": "data\\training\\refs.dev.jsonl"
+}
