@@ -763,67 +763,31 @@ def _cluster_image_rects(boxes: list[tuple]) -> list[tuple]:
     return rects
 
 
-def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True) -> list[dict[str, Any]]:
-    """Return a .pdf's content in reading order as *organized* preview blocks.
+def _process_pdf_page_chunk(
+    pdf_path_str: str,
+    page_indices: list[int],
+    find_tables_enabled: bool,
+) -> "dict[int, dict[str, Any]]":
+    """Parse a chunk of PDF pages under one fitz.Document handle.
 
-    Mirrors the output shape of ``_read_docx_blocks`` so the Run Compare
-    BEFORE/AFTER panels render a PDF the same way they render a .docx — including
-    real table grids, not just flat text:
-
-        paragraph -> ``{"index", "type": "paragraph", "text"}``
-        table     -> ``{"index", "type": "table", "rows": [[cell, …], …], "text"}``
-
-    Per page we (1) detect ruled tables with PyMuPDF's *lines* strategy — the
-    *text* strategy is deliberately avoided because it mis-reads ordinary prose
-    on text-rendered PDFs as bogus tables — (2) drop text blocks that fall inside
-    a detected table so their content is not duplicated, and (3) emit tables and
-    paragraphs interleaved in top-to-bottom order. Pages with no extractable text
-    (scanned / image-only) fall back to pdfplumber. PyMuPDF (``fitz``) is already
-    a project dependency; every failure path degrades gracefully so building a
-    preview can never crash the request.
+    One document per chunk keeps PyMuPDF thread-safe (no shared fitz objects
+    between threads) while amortising the file-open cost across many pages.
+    Returns ``{page_index: page_result_dict}`` consumed by ``_read_pdf_blocks``.
     """
     try:
-        import fitz  # PyMuPDF — lazy import keeps API startup fast
+        import fitz  # noqa: PLC0415
     except ImportError:
-        return []
+        return {i: {"tables": [], "paras": [], "images": [], "fallback": ""} for i in page_indices}
 
+    doc = fitz.open(pdf_path_str)
+    results: dict[int, dict[str, Any]] = {}
     try:
-        document = fitz.open(str(pdf_path))
-    except Exception:  # noqa: BLE001 — unreadable file ⇒ no preview, not a crash
-        return []
+        for page_index in page_indices:
+            page = doc.load_page(page_index)
 
-    # Skip the expensive per-page table detector when the caller doesn't need
-    # grids (the snippet search flattens tables to text anyway) or the document
-    # is too large to scan within budget.
-    #
-    # PERFORMANCE GATE (restored): on a LARGE PDF (e.g. the 126-page Study-ID
-    # protocol opened in the Reference View) ``find_tables`` runs ~0.14s/page →
-    # ~17s of cold parse, which dominates the wait on modest hardware. Above
-    # ``_PDF_TABLE_PAGE_LIMIT`` pages we skip grid detection and emit text-only
-    # blocks — links + scroll-to-reference are unaffected; only the rendered grid
-    # degrades to plain text on very large PDFs. Tune (or disable grids entirely
-    # with 0) via HYPERLINK_PDF_PREVIEW_TABLE_PAGE_LIMIT.
-    find_tables_enabled = detect_tables and document.page_count <= _PDF_TABLE_PAGE_LIMIT
-
-    blocks: list[dict[str, Any]] = []
-    idx = 0
-    try:
-        for page_index in range(document.page_count):
-            page = document.load_page(page_index)
-
-            # 1. Ruled tables (lines strategy only). Each becomes an ordered item
-            #    keyed by its top y so it slots into reading order below.
-            #
-            #    A borderless (``strategy="text"``) second pass was evaluated and
-            #    deliberately rejected: measured against four real ClinicalTrials
-            #    Protocol/SAP PDFs it found *zero* genuine borderless tables (their
-            #    data tables are all ruled, already caught here) and produced only
-            #    false positives — running headers, DocuSign e-signature envelope
-            #    stamps and TOC fragments shredded into fake grids — which render
-            #    worse than honest paragraph text. The ``text`` strategy cannot
-            #    reliably separate those from real tables on these documents, so we
-            #    keep ruled-only detection (the caching below is the real fix for
-            #    the slow Reference View, not borderless table promotion).
+            # 1. Ruled tables (lines strategy only — text strategy rejected:
+            #    measured against real Protocol/SAP PDFs it produced only false
+            #    positives on headers, DocuSign stamps, and TOC fragments).
             table_items: list[tuple[float, list[list[str]], tuple]] = []
             finder = getattr(page, "find_tables", None) if find_tables_enabled else None
             if callable(finder):
@@ -833,111 +797,74 @@ def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True) -> list[di
                         if rows:
                             bbox = tuple(float(v) for v in t.bbox)
                             table_items.append((bbox[1], rows, bbox))
-                except Exception:  # noqa: BLE001 — table detection is best-effort
+                except Exception:  # noqa: BLE001
                     table_items = []
             table_bboxes = [bb for _, _, bb in table_items]
 
-            def _inside_a_table(x0: float, y0: float, x1: float, y1: float) -> bool:
-                cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
-                return any(
-                    bb[0] <= cx <= bb[2] and bb[1] <= cy <= bb[3] for bb in table_bboxes
-                )
-
-            # 2. Text blocks (skip any whose center sits inside a detected table).
+            # 2a. Text + image blocks — single pass over get_text("blocks").
+            #     Block type 1 carries image bbox, so we no longer need the
+            #     separate get_text("dict") call that was previously used only to
+            #     find image bboxes — saving one full page traversal per page.
             para_items: list[tuple[float, str]] = []
+            raw_image_boxes: list[tuple[float, float, float, float]] = []
             for b in page.get_text("blocks", sort=True) or []:
-                # block_type 0 is text, 1 is an image — keep only text blocks.
-                if len(b) < 5 or (len(b) >= 7 and b[6] != 0):
+                if len(b) < 5:
+                    continue
+                btype = b[6] if len(b) >= 7 else 0
+                if btype == 1:
+                    raw_image_boxes.append(
+                        (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
+                    )
+                    continue
+                if btype != 0:
                     continue
                 raw = (b[4] or "").strip()
                 if not raw:
                     continue
-                if table_bboxes and _inside_a_table(
-                    float(b[0]), float(b[1]), float(b[2]), float(b[3])
+                cx = (float(b[0]) + float(b[2])) / 2.0
+                cy = (float(b[1]) + float(b[3])) / 2.0
+                if table_bboxes and any(
+                    bb[0] <= cx <= bb[2] and bb[1] <= cy <= bb[3] for bb in table_bboxes
                 ):
                     continue
-                # Collapse the soft line-breaks inside one block into spaces so a
-                # visual paragraph stays a single block. This keeps multi-word link
-                # text (e.g. "Section 2.5 of CSR …") contiguous for the client-side
-                # highlight matcher; blank-line gaps already split paragraphs.
                 text = " ".join(ln.strip() for ln in raw.splitlines() if ln.strip())
                 if text:
                     para_items.append((float(b[1]), text))
 
-            # 2b. Inline figures — rasterize each FIGURE REGION (cluster of image
-            #     XObjects) to ONE image instead of extracting individual XObjects.
-            #     Per-XObject extraction fragments a composite figure into many
-            #     stacked images and renders mask/alpha objects blank; rendering the
-            #     page region captures the figure exactly as drawn (tiles + vector +
-            #     labels) as a single clean picture, sized to its on-page width so a
-            #     high-res figure doesn't blow up to the full pane. BEFORE/AFTER/
-            #     Reference View share the renderer, so all three show it. Perf
-            #     intentionally not gated (demo completeness); size = crash-safety.
+            # 2b. Inline figure rasterization from clustered image bboxes.
             image_items: list[tuple[float, str, float]] = []
             try:
-                import base64
-
+                import base64 as _b64  # noqa: PLC0415
                 page_w = float(page.rect.width) or 612.0
-                raw_boxes = [
-                    ib["bbox"]
-                    for ib in page.get_text("dict").get("blocks", [])
-                    if ib.get("type") == 1 and ib.get("bbox")
-                ]
-                for x0, y0, x1, y1 in _cluster_image_rects(raw_boxes):
+                for x0, y0, x1, y1 in _cluster_image_rects(raw_image_boxes):
                     if (x1 - x0) < 8 or (y1 - y0) < 8:
                         continue
-                    pix = page.get_pixmap(clip=fitz.Rect(x0, y0, x1, y1), matrix=fitz.Matrix(2, 2))
+                    pix = page.get_pixmap(
+                        clip=fitz.Rect(x0, y0, x1, y1), matrix=fitz.Matrix(2, 2)
+                    )
                     png = pix.tobytes("png")
-                    if not png or len(png) > 16_000_000:  # crash-safety, not perf
+                    if not png or len(png) > 16_000_000:
                         continue
                     wf = max(0.08, min(1.0, (x1 - x0) / page_w if page_w else 1.0))
-                    uri = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+                    uri = "data:image/png;base64," + _b64.b64encode(png).decode("ascii")
                     image_items.append((float(y0), uri, wf))
-            except Exception:  # noqa: BLE001 — image extraction is best-effort
+            except Exception:  # noqa: BLE001
                 image_items = []
 
-            page_has_content = bool(table_items or para_items or image_items)
-
-            # 3. Emit tables + paragraphs interleaved in top-to-bottom order.
-            ordered: list[tuple[float, str, Any]] = (
-                [(y, "table", rows) for (y, rows, _bb) in table_items]
-                + [(y, "para", txt) for (y, txt) in para_items]
-                + [(y, "image", (uri, wf)) for (y, uri, wf) in image_items]
-            )
-            ordered.sort(key=lambda it: it[0])
-            for _y, kind, payload in ordered:
-                if kind == "table":
-                    # Flattened mirror keeps number-search and the "|" heuristic
-                    # alive for the snippet endpoint and scroll-to-table logic.
-                    flat = "\n".join(" | ".join(c for c in r if c) for r in payload)
-                    blocks.append(
-                        {"index": idx, "type": "table", "rows": payload, "text": flat}
-                    )
-                elif kind == "image":
-                    img_uri, img_wf = payload
-                    blocks.append(
-                        {"index": idx, "type": "image", "text": "[figure]",
-                         "src": img_uri, "width_frac": img_wf}
-                    )
-                else:
-                    blocks.append({"index": idx, "type": "paragraph", "text": payload})
-                idx += 1
-
-            # 4. Page had no extractable text (scanned image) — try pdfplumber,
-            #    then OCR (if enabled) as a last resort.
-            if not page_has_content:
-                fallback_text = ""
+            # 3. Fallback for scanned / image-only pages (no text extracted).
+            fallback_text = ""
+            if not (table_items or para_items or image_items):
                 try:
-                    from hyperlink_engine.core.ingestion.pdf_loader import (
+                    from hyperlink_engine.core.ingestion.pdf_loader import (  # noqa: PLC0415
                         page_text_via_pdfplumber,
                     )
-                    fallback_text = page_text_via_pdfplumber(Path(pdf_path), page_index)
+                    fallback_text = page_text_via_pdfplumber(Path(pdf_path_str), page_index)
                 except Exception:  # noqa: BLE001
                     pass
                 if not fallback_text.strip():
                     try:
-                        from hyperlink_engine.config.settings import get_settings as _gs
-                        from hyperlink_engine.core.ingestion.pdf_loader import page_text_via_ocr
+                        from hyperlink_engine.config.settings import get_settings as _gs  # noqa: PLC0415
+                        from hyperlink_engine.core.ingestion.pdf_loader import page_text_via_ocr  # noqa: PLC0415
                         _ocr_s = _gs()
                         if _ocr_s.ocr_enabled and _ocr_s.ocr_fallback_on_empty_page:
                             fallback_text = page_text_via_ocr(
@@ -950,16 +877,132 @@ def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True) -> list[di
                             )
                     except Exception:  # noqa: BLE001
                         pass
-                for line in (fallback_text or "").splitlines():
-                    line = line.strip()
-                    if line:
-                        blocks.append({"index": idx, "type": "paragraph", "text": line})
-                        idx += 1
+
+            results[page_index] = {
+                "tables": table_items,
+                "paras": para_items,
+                "images": image_items,
+                "fallback": fallback_text,
+            }
     finally:
         try:
-            document.close()
-        except Exception:  # pragma: no cover — best-effort cleanup
+            doc.close()
+        except Exception:  # noqa: BLE001
             pass
+    return results
+
+
+def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True) -> list[dict[str, Any]]:
+    """Return a .pdf's content in reading order as *organized* preview blocks.
+
+    Mirrors the output shape of ``_read_docx_blocks`` so the Run Compare
+    BEFORE/AFTER panels render a PDF the same way they render a .docx — including
+    real table grids, not just flat text:
+
+        paragraph -> ``{"index", "type": "paragraph", "text"}``
+        table     -> ``{"index", "type": "table", "rows": [[cell, …], …], "text"}``
+
+    Per page we (1) detect ruled tables with PyMuPDF's *lines* strategy, (2) drop
+    text blocks that fall inside a detected table, and (3) emit tables and
+    paragraphs interleaved in top-to-bottom order. Pages with no extractable text
+    fall back to pdfplumber then OCR.
+
+    Page processing is parallelised across up to 4 threads (one fitz.Document per
+    thread chunk) when table detection is active — ``find_tables`` (~0.14s/page)
+    dominates the cold-parse cost and MuPDF releases the GIL so threads genuinely
+    run in parallel. Text-only passes (``detect_tables=False`` or docs exceeding
+    ``_PDF_TABLE_PAGE_LIMIT``) run sequentially because thread overhead would
+    dominate the already-fast text extraction.
+    """
+    try:
+        import fitz  # PyMuPDF — lazy import keeps API startup fast
+        import concurrent.futures as _cf
+    except ImportError:
+        return []
+
+    # Probe page count without holding the document open during processing.
+    try:
+        _probe = fitz.open(str(pdf_path))
+        page_count = _probe.page_count
+        _probe.close()
+    except Exception:  # noqa: BLE001 — unreadable file ⇒ no preview, not a crash
+        return []
+
+    # Skip the expensive per-page table detector when the caller doesn't need
+    # grids (the snippet search flattens tables to text anyway) or the document
+    # is too large to scan within budget.
+    find_tables_enabled = detect_tables and page_count <= _PDF_TABLE_PAGE_LIMIT
+
+    # Partition pages into chunks and process in parallel when table detection
+    # is active. Each chunk opens its own fitz.Document handle so PyMuPDF
+    # thread-safety is preserved (no shared fitz objects between threads).
+    if find_tables_enabled and page_count > 1:
+        n_workers = min(4, page_count)
+        chunk_size = (page_count + n_workers - 1) // n_workers
+        chunks = [
+            list(range(i, min(i + chunk_size, page_count)))
+            for i in range(0, page_count, chunk_size)
+        ]
+        page_data: dict[int, dict[str, Any]] = {}
+        with _cf.ThreadPoolExecutor(max_workers=n_workers) as ex:
+            fut_to_chunk = {
+                ex.submit(
+                    _process_pdf_page_chunk, str(pdf_path), chunk, find_tables_enabled
+                ): chunk
+                for chunk in chunks
+            }
+            for fut in _cf.as_completed(fut_to_chunk):
+                try:
+                    page_data.update(fut.result())
+                except Exception:  # noqa: BLE001 — a failed chunk yields empty pages
+                    for pg in fut_to_chunk[fut]:
+                        page_data[pg] = {
+                            "tables": [], "paras": [], "images": [], "fallback": ""
+                        }
+    else:
+        # Sequential — text-only passes are already fast and thread overhead
+        # would be wasteful; also used for single-page docs.
+        page_data = _process_pdf_page_chunk(
+            str(pdf_path), list(range(page_count)), find_tables_enabled
+        )
+
+    # Assemble all pages into the flat block list in page order.
+    blocks: list[dict[str, Any]] = []
+    idx = 0
+    for page_index in range(page_count):
+        d = page_data.get(page_index, {"tables": [], "paras": [], "images": [], "fallback": ""})
+        table_items = d.get("tables", [])
+        para_items  = d.get("paras",  [])
+        image_items = d.get("images", [])
+        fallback    = d.get("fallback", "")
+
+        ordered: list[tuple[float, str, Any]] = (
+            [(y, "table", rows) for (y, rows, _bb) in table_items]
+            + [(y, "para", txt) for (y, txt) in para_items]
+            + [(y, "image", (uri, wf)) for (y, uri, wf) in image_items]
+        )
+        ordered.sort(key=lambda it: it[0])
+        for _y, kind, payload in ordered:
+            if kind == "table":
+                flat = "\n".join(" | ".join(c for c in r if c) for r in payload)
+                blocks.append(
+                    {"index": idx, "type": "table", "rows": payload, "text": flat}
+                )
+            elif kind == "image":
+                img_uri, img_wf = payload
+                blocks.append(
+                    {"index": idx, "type": "image", "text": "[figure]",
+                     "src": img_uri, "width_frac": img_wf}
+                )
+            else:
+                blocks.append({"index": idx, "type": "paragraph", "text": payload})
+            idx += 1
+
+        for line in (fallback or "").splitlines():
+            line = line.strip()
+            if line:
+                blocks.append({"index": idx, "type": "paragraph", "text": line})
+                idx += 1
 
     return blocks
 
@@ -1032,6 +1075,33 @@ def _read_doc_blocks(path: "Path", *, detect_tables: bool = True) -> list[dict[s
     return blocks
 
 
+def _warm_run_cache(state: "dict[str, Any]") -> None:
+    """Pre-parse all PDF documents in a completed run into the block cache.
+
+    Called as a daemon thread from ``pipeline_results`` immediately after the
+    user first fetches run results, so the Reference View finds the cache warm
+    on first click rather than cold-parsing a large PDF on demand.
+
+    Already-cached documents are detected with a single lock grab and skipped
+    instantly — safe to call on every results fetch. Exceptions are swallowed
+    so a warming failure never surfaces to the user.
+    """
+    for p in list(state.get("linked_files", [])) + list(state.get("input_files", [])):
+        try:
+            rp = _resolve_path(Path(p))
+            if not rp or rp.suffix.lower() != ".pdf":
+                continue
+            key = _doc_blocks_cache_key(rp, detect_tables=True)
+            if key is None:
+                continue
+            with _DOC_BLOCKS_CACHE_LOCK:
+                if key in _DOC_BLOCKS_CACHE:
+                    continue  # already warm — skip without parsing
+            _read_doc_blocks(rp, detect_tables=True)
+        except Exception:  # noqa: BLE001 — warming is best-effort
+            pass
+
+
 # App factory
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1077,11 +1147,13 @@ def create_app(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
-            "http://localhost:5173",   # original react_frontend
-            "http://localhost:5174",   # simple_frontend (two-screen UI)
+            "http://localhost:5173",
+            "http://localhost:5174",
+            "http://localhost:5200",   # current development frontend
             "http://localhost:3000",
             "http://127.0.0.1:5173",
             "http://127.0.0.1:5174",
+            "http://127.0.0.1:5200",   # current development frontend
             "http://127.0.0.1:3000",
         ],
         allow_credentials=True,
@@ -1680,6 +1752,20 @@ def create_app(
             runner.run_in_background(state)
             return {"run_id": run_id, "status": "started"}
 
+        @app.post("/api/pipeline/run/{run_id}/cancel", dependencies=_CLASSIFIED_GATE)
+        def pipeline_cancel(run_id: str) -> dict[str, Any]:
+            """Signal a running pipeline to stop after its current node."""
+            from hyperlink_engine.orchestration.runner import cancel_run
+            from hyperlink_engine.orchestration.state import run_store
+
+            state = run_store.get(run_id)
+            if state is None:
+                raise HTTPException(status_code=404, detail=f"run_id {run_id!r} not found")
+            if state.get("status") not in ("running", "started"):
+                raise HTTPException(status_code=409, detail="Pipeline is not running")
+            signalled = cancel_run(run_id)
+            return {"run_id": run_id, "signalled": signalled}
+
         @app.get("/api/pipeline/stream/{run_id}", dependencies=_CLASSIFIED_GATE)
         async def pipeline_stream(run_id: str) -> StreamingResponse:
             """SSE endpoint: yields JSON events as the pipeline advances."""
@@ -1814,6 +1900,13 @@ def create_app(
                     "external": external,
                     "broken": broken,
                 })
+
+            # Pre-warm the block cache for all PDFs in this run so the first
+            # Reference View click is fast instead of triggering a cold parse.
+            import threading as _threading
+            _threading.Thread(
+                target=_warm_run_cache, args=(state,), daemon=True
+            ).start()
 
             return {
                 "run_id": run_id,
