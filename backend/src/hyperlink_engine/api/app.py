@@ -801,20 +801,30 @@ def _process_pdf_page_chunk(
                     table_items = []
             table_bboxes = [bb for _, _, bb in table_items]
 
-            # 2a. Text + image blocks — single pass over get_text("blocks").
-            #     Block type 1 carries image bbox, so we no longer need the
-            #     separate get_text("dict") call that was previously used only to
-            #     find image bboxes — saving one full page traversal per page.
-            para_items: list[tuple[float, str]] = []
+            # 2a. Image bbox collection via get_images() + get_image_rects().
+            #     get_text("blocks") type=1 only covers inline-image markers in the
+            #     PDF content stream and silently misses form XObjects (the most
+            #     common way clinical PDFs embed figures / charts). get_images()
+            #     returns every embedded xref regardless of how it was placed.
             raw_image_boxes: list[tuple[float, float, float, float]] = []
+            try:
+                for img_info in page.get_images(full=False):
+                    xref = img_info[0]
+                    for rect in page.get_image_rects(xref):
+                        if rect.width > 4 and rect.height > 4:
+                            raw_image_boxes.append(
+                                (float(rect.x0), float(rect.y0), float(rect.x1), float(rect.y1))
+                            )
+            except Exception:  # noqa: BLE001
+                pass
+
+            # 2b. Text blocks.
+            para_items: list[tuple[float, str]] = []
             for b in page.get_text("blocks", sort=True) or []:
                 if len(b) < 5:
                     continue
                 btype = b[6] if len(b) >= 7 else 0
-                if btype == 1:
-                    raw_image_boxes.append(
-                        (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
-                    )
+                if btype == 1:  # inline-image marker in text stream — already handled above
                     continue
                 if btype != 0:
                     continue
@@ -831,7 +841,7 @@ def _process_pdf_page_chunk(
                 if text:
                     para_items.append((float(b[1]), text))
 
-            # 2b. Inline figure rasterization from clustered image bboxes.
+            # 2c. Inline figure rasterization from clustered image bboxes.
             image_items: list[tuple[float, str, float]] = []
             try:
                 import base64 as _b64  # noqa: PLC0415
@@ -929,8 +939,7 @@ def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True) -> list[di
         return []
 
     # Skip the expensive per-page table detector when the caller doesn't need
-    # grids (the snippet search flattens tables to text anyway) or the document
-    # is too large to scan within budget.
+    # grids or the document is too large to scan within budget.
     find_tables_enabled = detect_tables and page_count <= _PDF_TABLE_PAGE_LIMIT
 
     # Partition pages into chunks and process in parallel when table detection
