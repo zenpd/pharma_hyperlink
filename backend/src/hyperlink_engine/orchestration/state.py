@@ -84,6 +84,9 @@ class PipelineState(dict):  # type: ignore[type-arg]
                 "grade": "F",
                 "error": None,
                 "events": [],
+                # Cooperative cancel flag — set by POST /run/{id}/cancel; the
+                # runner honors it at the next node boundary (status -> "cancelled").
+                "cancel_requested": False,
             }
         )
         return state
@@ -99,6 +102,7 @@ class _RunStore:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        self._hydrate_lock = threading.Lock()
         self._runs: dict[str, PipelineState] = {}
         self._hydrated = False
 
@@ -111,24 +115,27 @@ class _RunStore:
         """
         if self._hydrated:
             return
-        self._hydrated = True
-        try:
-            from hyperlink_engine.core.graph.dossier_schema import get_dossier_store
-
-            store = get_dossier_store()
-            if store is None:
+        with self._hydrate_lock:
+            if self._hydrated:
                 return
-            states = store.fetch_runs()
-        except Exception:  # noqa: BLE001 — hydration must never break the store
-            return
+            self._hydrated = True
+            try:
+                from hyperlink_engine.core.graph.dossier_schema import get_dossier_store
 
-        for st in states:
-            ps = PipelineState()
-            ps.update(st)
-            ps["input_files"] = [Path(p) for p in st.get("input_files", [])]
-            ps["linked_files"] = [Path(p) for p in st.get("linked_files", [])]
-            with self._lock:
-                self._runs.setdefault(st["run_id"], ps)
+                store = get_dossier_store()
+                if store is None:
+                    return
+                states = store.fetch_runs()
+            except Exception:  # noqa: BLE001 — hydration must never break the store
+                return
+
+            for st in states:
+                ps = PipelineState()
+                ps.update(st)
+                ps["input_files"] = [Path(p) for p in st.get("input_files", [])]
+                ps["linked_files"] = [Path(p) for p in st.get("linked_files", [])]
+                with self._lock:
+                    self._runs.setdefault(st["run_id"], ps)
 
     def create(self, state: PipelineState) -> PipelineState:
         with self._lock:

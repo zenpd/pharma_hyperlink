@@ -54,7 +54,7 @@ function initNodes(): PipelineNodeState[] {
   return NODE_DEFS.map((n) => ({ name: n.key, label: n.label, status: "pending" }));
 }
 
-type PageState = "idle" | "uploading" | "running" | "done" | "error";
+type PageState = "idle" | "uploading" | "running" | "done" | "error" | "cancelled";
 
 interface DocRow {
   filename: string;
@@ -308,6 +308,12 @@ export function Pipeline({ onBack, onGoToReview, onCompareDoc }: Props) {
 
         if (node === "__end__") {
           es.close();
+          if (status === "cancelled") {
+            setNodes((prev) => prev.map((n) => (n.status === "running" ? { ...n, status: "pending" } : n)));
+            addLog("Pipeline cancelled.");
+            setPageState("cancelled");
+            return;
+          }
           // On a successful finish every stage that ran is complete — mark all
           // non-errored nodes done. This reliably greens the terminal
           // "Push / Flag" stage even when its final SSE events arrive in the
@@ -389,6 +395,18 @@ export function Pipeline({ onBack, onGoToReview, onCompareDoc }: Props) {
     }
   }
 
+  async function handleCancel() {
+    if (!runId) return;
+    addLog("Cancelling run…");
+    try {
+      await api.pipeline.cancel(runId);
+    } catch (e) {
+      addLog(`Cancel request failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    // The runner stops at the next node boundary and emits a "cancelled" __end__
+    // event; the SSE handler turns that into the cancelled page state.
+  }
+
   function handleReset() {
     esRef.current?.close();
     setFiles([]);
@@ -417,7 +435,7 @@ export function Pipeline({ onBack, onGoToReview, onCompareDoc }: Props) {
       <button className="back-btn" onClick={onBack}>← Back to Dashboard</button>
       <div className="page-title">🚀 Pipeline Run</div>
       <div className="page-subtitle">
-        Upload dossier documents · AI detects &amp; injects hyperlinks · live progress
+        Upload dossier documents · AI detects & injects hyperlinks · live progress
       </div>
 
       {/* ── Agent configuration (idle / uploading) ── */}
@@ -659,8 +677,8 @@ export function Pipeline({ onBack, onGoToReview, onCompareDoc }: Props) {
         </div>
       )}
 
-      {/* ── Live stepper (running / done / error) ── */}
-      {(pageState === "running" || pageState === "done" || pageState === "error") && (
+      {/* ── Live stepper (running / done / error / cancelled) ── */}
+      {(pageState === "running" || pageState === "done" || pageState === "error" || pageState === "cancelled") && (
         <>
           {/* Run metadata */}
           <div className="card" style={{ padding: "12px 20px", display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap" }}>
@@ -695,9 +713,19 @@ export function Pipeline({ onBack, onGoToReview, onCompareDoc }: Props) {
               </>
             )}
             {pageState === "running" && (
-              <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--brand)" }}>
-                <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
-                Running · {currentNode ?? "starting"}
+              <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--brand)" }}>
+                  <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
+                  Running · {currentNode ?? "starting"}
+                </span>
+                <button
+                  className="btn-ghost btn-sm"
+                  onClick={handleCancel}
+                  style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
+                  title="Stop the pipeline at the next stage boundary"
+                >
+                  ⏹ Cancel
+                </button>
               </span>
             )}
             {pageState === "done" && (
@@ -708,6 +736,11 @@ export function Pipeline({ onBack, onGoToReview, onCompareDoc }: Props) {
             {pageState === "error" && (
               <span style={{ marginLeft: "auto", fontSize: 13, color: "var(--danger)", fontWeight: 600 }}>
                 ✕ Error
+              </span>
+            )}
+            {pageState === "cancelled" && (
+              <span style={{ marginLeft: "auto", fontSize: 13, color: "var(--danger)", fontWeight: 600 }}>
+                ⏹ Cancelled
               </span>
             )}
           </div>
@@ -845,6 +878,19 @@ export function Pipeline({ onBack, onGoToReview, onCompareDoc }: Props) {
               <br />
               <button className="btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={handleReset}>
                 ↩ Try Again
+              </button>
+            </div>
+          )}
+
+          {/* Cancelled */}
+          {pageState === "cancelled" && (
+            <div className="card" style={{ padding: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--danger)" }}>⏹ Pipeline cancelled</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                The run was stopped before completion — no results were produced.
+              </div>
+              <button className="btn-ghost btn-sm" style={{ marginTop: 10 }} onClick={handleReset}>
+                ↩ New Run
               </button>
             </div>
           )}

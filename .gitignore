@@ -97,3 +97,5 @@ models/
 .docker/
 neo4j_data/
 redis_data/
+
+graphify-out/

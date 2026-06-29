@@ -1680,6 +1680,24 @@ def create_app(
             runner.run_in_background(state)
             return {"run_id": run_id, "status": "started"}
 
+        @app.post("/api/pipeline/run/{run_id}/cancel", dependencies=_CLASSIFIED_GATE)
+        def pipeline_cancel(run_id: str) -> dict[str, Any]:
+            """Request cancellation of a running pipeline.
+
+            Sets the ``cancel_requested`` flag on the run's in-memory state;
+            the runner checks this flag at each node boundary and stops
+            cooperatively. The SSE stream emits ``{"node": …, "status": "cancelled"}``
+            when the shutdown completes.
+            """
+            from hyperlink_engine.orchestration.state import run_store
+
+            state = run_store.get(run_id)
+            if state is None:
+                raise HTTPException(status_code=404, detail=f"run_id {run_id!r} not found")
+            state["cancel_requested"] = True
+            run_store.update(state)
+            return {"run_id": run_id, "status": "cancelling"}
+
         @app.get("/api/pipeline/stream/{run_id}", dependencies=_CLASSIFIED_GATE)
         async def pipeline_stream(run_id: str) -> StreamingResponse:
             """SSE endpoint: yields JSON events as the pipeline advances."""

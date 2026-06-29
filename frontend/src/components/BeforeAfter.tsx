@@ -321,6 +321,21 @@ export function BeforeAfter({ preview, afterPath, afterTitle, onLinkClick, runId
   const afterRefs = useRef<Record<number, HTMLElement | null>>({});
   const [highlightPara, setHighlightPara] = useState<number | null>(null);
 
+  // ── Synchronized scrolling between the BEFORE and AFTER panels (toggleable) ──
+  const [syncScroll, setSyncScroll] = useState(true);
+  const beforeScrollRef = useRef<HTMLDivElement | null>(null);
+  const afterScrollRef = useRef<HTMLDivElement | null>(null);
+  const syncingRef = useRef(false);
+
+  function mirrorScroll(src: HTMLDivElement | null, dst: HTMLDivElement | null) {
+    if (!syncScroll || !src || !dst || syncingRef.current) return;
+    syncingRef.current = true;
+    const ratio = src.scrollTop / (src.scrollHeight - src.clientHeight || 1);
+    dst.scrollTop = ratio * (dst.scrollHeight - dst.clientHeight || 1);
+    // release on the next frame so the mirrored scroll doesn't bounce back
+    requestAnimationFrame(() => { syncingRef.current = false; });
+  }
+
   /** A link is "internal" when it points within this same document.
    *
    *  Three cases are treated as internal:
@@ -582,7 +597,11 @@ export function BeforeAfter({ preview, afterPath, afterTitle, onLinkClick, runId
               No hyperlinks
             </span>
           </div>
-          <div style={{ padding: "12px 14px", maxHeight: 520, overflowY: "auto", fontSize: 13, lineHeight: 1.65 }}>
+          <div
+            ref={(el) => { beforeScrollRef.current = el; }}
+            onScroll={() => mirrorScroll(beforeScrollRef.current, afterScrollRef.current)}
+            style={{ padding: "12px 14px", maxHeight: 520, overflowY: "auto", fontSize: 13, lineHeight: 1.65 }}
+          >
             {preview.paragraphs.map(renderBeforeBlock)}
           </div>
         </div>
@@ -619,7 +638,29 @@ export function BeforeAfter({ preview, afterPath, afterTitle, onLinkClick, runId
             </div>
           )}
 
-          <div style={{ padding: "12px 14px", maxHeight: 520, overflowY: "auto", fontSize: 13, lineHeight: 1.65, position: "relative" }}>
+          {/* Sync-scroll toggle */}
+          <div style={{
+            padding: "5px 14px",
+            fontSize: 11, color: "#555",
+            background: "#f0f4ff",
+            borderBottom: "1px solid #c5cae9",
+            display: "flex", alignItems: "center", gap: 8,
+          }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={syncScroll}
+                onChange={(e) => setSyncScroll(e.target.checked)}
+              />
+              <span>Sync scroll</span>
+            </label>
+          </div>
+
+          <div
+            ref={(el) => { afterScrollRef.current = el; }}
+            onScroll={() => mirrorScroll(afterScrollRef.current, beforeScrollRef.current)}
+            style={{ padding: "12px 14px", maxHeight: 520, overflowY: "auto", fontSize: 13, lineHeight: 1.65, position: "relative" }}
+          >
             {preview.paragraphs.map(renderAfterBlock)}
           </div>
         </div>

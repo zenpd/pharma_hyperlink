@@ -193,6 +193,10 @@ export const api = {
     run: (runId: string) =>
       post<{ run_id: string; status: string }>(`${PIPELINE_BASE}/run/${runId}`),
 
+    /** Request cancellation of a running pipeline (cooperative — stops at next node) */
+    cancel: (runId: string) =>
+      post<{ run_id: string; status: string }>(`${PIPELINE_BASE}/run/${runId}/cancel`),
+
     /** Open a live SSE stream — caller must close EventSource when done */
     stream: (runId: string): EventSource =>
       new EventSource(`${PIPELINE_BASE}/stream/${runId}`),

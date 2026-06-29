@@ -185,6 +185,15 @@ class PipelineRunner:
                         state.update(node_update)
                     state["current_node"] = node_name
                     run_store.update(state)
+                # Cooperative cancellation between graph nodes.
+                if state.get("cancel_requested"):
+                    state["status"] = "cancelled"
+                    event_bus.emit(
+                        state["run_id"], state.get("current_node", "?"), "cancelled",
+                        {"reason": "user requested cancel"},
+                    )
+                    run_store.update(state)
+                    break
         except Exception as exc:  # noqa: BLE001 — mirror sequential error handling
             _log.error("pipeline_graph_error", run_id=state["run_id"], error=str(exc))
             state["status"] = "error"
@@ -195,7 +204,8 @@ class PipelineRunner:
             run_store.update(state)
 
         # The graph already handled push/flag routing via its conditional edge.
-        state["status"] = "done" if state.get("status") != "error" else "error"
+        if state.get("status") not in ("error", "cancelled"):
+            state["status"] = "done"
         state["current_node"] = "__end__"
         run_store.update(state)
         _persist_run(state)
@@ -206,6 +216,15 @@ class PipelineRunner:
 
     def _invoke_sequential(self, state: PipelineState) -> PipelineState:
         for node_name, node_fn in _resolve_nodes(state):
+            # Cooperative cancellation: honor a cancel request before each node.
+            if state.get("cancel_requested"):
+                state["status"] = "cancelled"
+                state["current_node"] = node_name
+                event_bus.emit(
+                    state["run_id"], node_name, "cancelled", {"reason": "user requested cancel"}
+                )
+                run_store.update(state)
+                break
             try:
                 state = node_fn(state)
                 run_store.update(state)
@@ -222,14 +241,15 @@ class PipelineRunner:
                 run_store.update(state)
                 break
 
-        # Terminal routing: push vs. flag
-        if state.get("status") != "error":
+        # Terminal routing: push vs. flag (skip when errored or cancelled)
+        if state.get("status") not in ("error", "cancelled"):
             if state.get("score", 0.0) >= _READINESS_FLOOR:
                 state = node_push_dossplorer(state)
             else:
                 state = node_flag_for_review(state)
 
-        state["status"] = "done" if state.get("status") != "error" else "error"
+        if state.get("status") not in ("error", "cancelled"):
+            state["status"] = "done"
         state["current_node"] = "__end__"
         run_store.update(state)
         _persist_run(state)
