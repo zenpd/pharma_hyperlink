@@ -923,15 +923,33 @@ def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True) -> list[di
                     blocks.append({"index": idx, "type": "paragraph", "text": payload})
                 idx += 1
 
-            # 4. Page had no extractable text (scanned image) — try pdfplumber once.
+            # 4. Page had no extractable text (scanned image) — try pdfplumber,
+            #    then OCR (if enabled) as a last resort.
             if not page_has_content:
+                fallback_text = ""
                 try:
                     from hyperlink_engine.core.ingestion.pdf_loader import (
                         page_text_via_pdfplumber,
                     )
                     fallback_text = page_text_via_pdfplumber(Path(pdf_path), page_index)
-                except Exception:  # noqa: BLE001 — fallback must never crash preview
-                    fallback_text = ""
+                except Exception:  # noqa: BLE001
+                    pass
+                if not fallback_text.strip():
+                    try:
+                        from hyperlink_engine.config.settings import get_settings as _gs
+                        from hyperlink_engine.core.ingestion.pdf_loader import page_text_via_ocr
+                        _ocr_s = _gs()
+                        if _ocr_s.ocr_enabled and _ocr_s.ocr_fallback_on_empty_page:
+                            fallback_text = page_text_via_ocr(
+                                page,
+                                page_index,
+                                engine=_ocr_s.ocr_engine,
+                                language=_ocr_s.ocr_language,
+                                dpi=_ocr_s.ocr_dpi,
+                                min_confidence=_ocr_s.ocr_min_confidence,
+                            )
+                    except Exception:  # noqa: BLE001
+                        pass
                 for line in (fallback_text or "").splitlines():
                     line = line.strip()
                     if line:
@@ -2634,6 +2652,29 @@ def create_app(
                 )
                 if fallback is not None:
                     target_path = fallback
+
+            # Cross-run fallback: when the document wasn't uploaded in this run
+            # (e.g. two PDFs processed in separate runs but the UI only tracks one
+            # active run_id), search sibling run directories so Compare still works.
+            if target_path is None or not target_path.exists():
+                runs_root = Path("output") / "runs"
+                if runs_root.exists():
+                    for sibling_run in sorted(runs_root.iterdir(), reverse=True):
+                        if sibling_run.name == run_id or not sibling_run.is_dir():
+                            continue
+                        candidate = sibling_run / "output" / doc_name
+                        if candidate.exists():
+                            target_path = candidate
+                            break
+                        if stage == "raw":
+                            orig_name = doc_name.replace("_linked", "")
+                            for sub in ("input", "output"):
+                                raw_cand = sibling_run / sub / orig_name
+                                if raw_cand.exists():
+                                    target_path = raw_cand
+                                    break
+                        if target_path is not None and target_path.exists():
+                            break
 
             if target_path is None or not target_path.exists():
                 raise HTTPException(

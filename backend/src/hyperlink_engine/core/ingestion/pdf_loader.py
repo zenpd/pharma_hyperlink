@@ -117,6 +117,46 @@ def page_text_via_pdfplumber(path: Path, page_index: int) -> str:
         return pdf.pages[page_index].extract_text() or ""
 
 
+def page_words_via_ocr(
+    page: "fitz.Document",
+    page_index: int,
+    *,
+    engine: str = "tesseract",
+    language: str = "eng",
+    dpi: int = 300,
+    min_confidence: float = 0.5,
+) -> "Any":
+    """OCR fallback returning per-word pixel bboxes (OcrPageResultWithWords).
+
+    Returns an OcrPageResultWithWords where each word carries a pixel-space
+    bbox; the caller converts to PDF points via ``x_pt = x_px * 72.0 / dpi``.
+    Falls back to an empty result on any error.
+    """
+    from hyperlink_engine.core.ingestion.ocr_processor import (
+        OcrError,
+        OcrNotAvailableError,
+        OcrPageResultWithWords,
+        ocr_pdf_page_words,
+    )
+
+    try:
+        return ocr_pdf_page_words(
+            page,
+            page_index,
+            engine=engine,
+            language=language,
+            dpi=dpi,
+            min_confidence=min_confidence,
+        )
+    except OcrNotAvailableError as exc:
+        _log.warning("ocr_not_available", page_index=page_index, reason=str(exc))
+    except OcrError as exc:
+        _log.warning("ocr_failed", page_index=page_index, reason=str(exc))
+    except Exception as exc:  # pragma: no cover
+        _log.error("ocr_unexpected_error", page_index=page_index, error=str(exc))
+    return OcrPageResultWithWords(page_index=page_index, text="", confidence=0.0, engine=engine)
+
+
 def page_text_via_ocr(
     page: "fitz.Document",
     page_index: int,

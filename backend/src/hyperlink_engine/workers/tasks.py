@@ -827,10 +827,80 @@ def _detect_references_pdf(
                         _all_lines.append(_t)
         _vocab = _build_ref_vocab(_all_lines)
 
+    from hyperlink_engine.config.settings import get_settings as _get_settings
+    _ocr_cfg = _get_settings()
+
     for page_index in range(doc.page_count):
         page = doc.load_page(page_index)
         page_dict = page.get_text("dict")
         span_idx = 0
+
+        # ── OCR fallback for image-only (scanned) pages ───────────────────
+        # When PyMuPDF finds no text blocks, try OCR before giving up.
+        # Word-level bboxes from Tesseract are converted from pixel space to
+        # PDF-point space so each injected link rectangle covers only the
+        # matched text span rather than the entire page.
+        _text_blocks = [b for b in page_dict.get("blocks", []) if b.get("type", 0) == 0]
+        if not _text_blocks and _ocr_cfg.ocr_enabled and _ocr_cfg.ocr_fallback_on_empty_page:
+            try:
+                from hyperlink_engine.core.ingestion.pdf_loader import page_words_via_ocr
+                _ocr_result = page_words_via_ocr(
+                    page,
+                    page_index,
+                    engine=_ocr_cfg.ocr_engine,
+                    language=_ocr_cfg.ocr_language,
+                    dpi=_ocr_cfg.ocr_dpi,
+                    min_confidence=_ocr_cfg.ocr_min_confidence,
+                )
+                _ocr_text = _ocr_result.text
+                _ocr_words = _ocr_result.words
+            except Exception:
+                _ocr_text = ""
+                _ocr_words = []
+            if _ocr_text.strip():
+                _pw, _ph = float(page.rect.width), float(page.rect.height)
+                _full_bbox = (0.0, 0.0, _pw, _ph)
+                _pt_scale = 72.0 / _ocr_cfg.ocr_dpi  # pixels → PDF points
+                for ref in extractor.extract(_ocr_text):
+                    # Find OCR words that overlap with this reference's char range
+                    # and union their bboxes for a tight link rectangle.
+                    _ref_words = [
+                        w for w in _ocr_words
+                        if w.char_start < ref.end and w.char_end > ref.start
+                    ]
+                    if _ref_words:
+                        _ref_bbox: tuple[float, float, float, float] = (
+                            min(w.x0_px for w in _ref_words) * _pt_scale,
+                            min(w.y0_px for w in _ref_words) * _pt_scale,
+                            max(w.x1_px for w in _ref_words) * _pt_scale,
+                            max(w.y1_px for w in _ref_words) * _pt_scale,
+                        )
+                    else:
+                        _ref_bbox = _full_bbox
+                    detections.append(
+                        {
+                            "is_pdf": True,
+                            "page_index": page_index,
+                            "span_index": span_idx,
+                            "char_start": ref.start,
+                            "char_end": ref.end,
+                            "bbox": list(_ref_bbox),
+                            "pattern_id": ref.pattern_id,
+                            "label": ref.label,
+                            "text": ref.text,
+                            "context": _ocr_text,
+                            "confidence": ref.confidence,
+                            "source_layer": "ocr+" + ref.source_layer,
+                            "groups": dict(ref.groups),
+                            "llm_consulted": ref.llm_consulted,
+                            "llm_confidence_before": ref.llm_confidence_before,
+                            "llm_confidence_after": ref.llm_confidence_after,
+                            "llm_reasoning": ref.llm_reasoning,
+                        }
+                    )
+                span_idx += 1
+            continue  # no fitz text blocks — skip normal block loop
+
         for block in page_dict.get("blocks", []):
             if block.get("type", 0) != 0:
                 continue

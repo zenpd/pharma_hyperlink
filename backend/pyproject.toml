@@ -99,6 +99,7 @@ all = [
     "neo4j",
     "litellm",
     "supertokens-python",
+    "gliner",
 ]
 
 [tool.poetry.scripts]

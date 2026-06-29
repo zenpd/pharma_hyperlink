@@ -56,6 +56,26 @@ class OcrPageResult:
         return bool(self.text.strip())
 
 
+@dataclass
+class OcrWord:
+    """A single OCR-recognised word with its pixel-space bounding box."""
+
+    text: str
+    char_start: int  # start offset in OcrPageResultWithWords.text
+    char_end: int    # end offset (exclusive)
+    x0_px: float     # left edge in rendered-image pixels
+    y0_px: float     # top edge
+    x1_px: float     # right edge
+    y1_px: float     # bottom edge
+
+
+@dataclass
+class OcrPageResultWithWords(OcrPageResult):
+    """OcrPageResult enriched with per-word bounding boxes."""
+
+    words: list[OcrWord] = field(default_factory=list)
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Internal helpers
 # ─────────────────────────────────────────────────────────────────────────
@@ -95,6 +115,14 @@ def _image_path_to_pil(path: Path):  # type: ignore[return]
 
 def _ocr_tesseract(image: Any, language: str, min_confidence: float) -> tuple[str, float, int]:
     """Run pytesseract on a PIL Image; return (text, avg_confidence, word_count)."""
+    text, avg_conf, word_count, _ = _ocr_tesseract_words(image, language, min_confidence)
+    return text, avg_conf, word_count
+
+
+def _ocr_tesseract_words(
+    image: Any, language: str, min_confidence: float
+) -> tuple[str, float, int, list[OcrWord]]:
+    """Run pytesseract and return (text, avg_confidence, word_count, words_with_bboxes)."""
     try:
         import pytesseract
     except ImportError as exc:
@@ -104,7 +132,6 @@ def _ocr_tesseract(image: Any, language: str, min_confidence: float) -> tuple[st
         ) from exc
 
     try:
-        # TSV output gives per-word confidence scores
         tsv_data = pytesseract.image_to_data(
             image,
             lang=language,
@@ -113,26 +140,45 @@ def _ocr_tesseract(image: Any, language: str, min_confidence: float) -> tuple[st
     except Exception as exc:
         raise OcrError(f"Tesseract failed: {exc}") from exc
 
-    words: list[str] = []
+    word_texts: list[str] = []
     confidences: list[float] = []
+    ocr_words: list[OcrWord] = []
+    char_pos = 0
+
     for i, conf in enumerate(tsv_data.get("conf", [])):
         try:
             conf_val = float(conf)
         except (TypeError, ValueError):
             continue
-        if conf_val < 0:  # Tesseract uses -1 for non-word rows
+        if conf_val < 0:
             continue
         word = tsv_data["text"][i].strip()
         if not word:
             continue
-        norm_conf = conf_val / 100.0  # Tesseract reports 0–100
+        norm_conf = conf_val / 100.0
         if norm_conf >= min_confidence:
-            words.append(word)
+            if word_texts:  # space separator before each word after the first
+                char_pos += 1
+            x = float(tsv_data["left"][i])
+            y = float(tsv_data["top"][i])
+            w = float(tsv_data["width"][i])
+            h = float(tsv_data["height"][i])
+            ocr_words.append(OcrWord(
+                text=word,
+                char_start=char_pos,
+                char_end=char_pos + len(word),
+                x0_px=x,
+                y0_px=y,
+                x1_px=x + w,
+                y1_px=y + h,
+            ))
+            word_texts.append(word)
+            char_pos += len(word)
             confidences.append(norm_conf)
 
-    text = " ".join(words)
+    text = " ".join(word_texts)
     avg_conf = (sum(confidences) / len(confidences)) if confidences else 0.0
-    return text, avg_conf, len(words)
+    return text, avg_conf, len(word_texts), ocr_words
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -171,7 +217,7 @@ def _ocr_easyocr(image: Any, language: str, min_confidence: float) -> tuple[str,
 
     words: list[str] = []
     confidences: list[float] = []
-    for (_bbox, text, conf) in results:
+    for (_, text, conf) in results:
         if conf < min_confidence:
             continue
         word = text.strip()
@@ -198,14 +244,65 @@ def ocr_pdf_page(
     dpi: int = 300,
     min_confidence: float = 0.5,
 ) -> OcrPageResult:
-    """OCR a single fitz.Page.
-
-    Renders the page to an image at ``dpi`` dots-per-inch and then runs the
-    selected OCR engine. Returns an OcrPageResult; callers should check
-    ``result.has_text`` before using ``result.text``.
-    """
+    """OCR a single fitz.Page. Returns text + confidence; no word bboxes."""
     image = _fitz_page_to_pil(page, dpi=dpi)
     return _run_ocr(image, page_index=page_index, engine=engine, language=language, min_confidence=min_confidence)
+
+
+def ocr_pdf_page_words(
+    page: "fitz.Page",
+    page_index: int,
+    *,
+    engine: str = "tesseract",
+    language: str = "eng",
+    dpi: int = 300,
+    min_confidence: float = 0.5,
+) -> OcrPageResultWithWords:
+    """OCR a single fitz.Page, returning per-word pixel bounding boxes.
+
+    Word bboxes are in the rendered image's pixel coordinate space at ``dpi``
+    DPI. Convert to PDF points: ``x_pt = x_px * 72.0 / dpi``.
+    Only supports the "tesseract" engine (falls back to plain text for easyocr).
+    """
+    image = _fitz_page_to_pil(page, dpi=dpi)
+    if engine == "tesseract":
+        try:
+            text, avg_conf, word_count, words = _ocr_tesseract_words(image, language, min_confidence)
+        except (OcrNotAvailableError, OcrError):
+            raise
+        except Exception as exc:
+            raise OcrError(f"OCR failed on page {page_index}: {exc}") from exc
+    else:
+        # EasyOCR path — fall back to plain result with no word bboxes
+        base = _run_ocr(image, page_index=page_index, engine=engine, language=language, min_confidence=min_confidence)
+        result = OcrPageResultWithWords(
+            page_index=base.page_index,
+            text=base.text,
+            confidence=base.confidence,
+            engine=base.engine,
+            word_count=base.word_count,
+            metadata=base.metadata,
+            words=[],
+        )
+        _log.info("ocr_words_done", engine=engine, page_index=page_index, word_count=base.word_count)
+        return result
+
+    result = OcrPageResultWithWords(
+        page_index=page_index,
+        text=text,
+        confidence=avg_conf,
+        engine=engine,
+        word_count=word_count,
+        words=words,
+    )
+    _log.info(
+        "ocr_words_done",
+        engine=engine,
+        page_index=page_index,
+        word_count=word_count,
+        confidence=round(avg_conf, 3),
+    )
+    return result
 
 
 def ocr_image_file(
