@@ -695,9 +695,25 @@ export function Pipeline({ onBack, onGoToReview, onCompareDoc }: Props) {
               </>
             )}
             {pageState === "running" && (
-              <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--brand)" }}>
+              <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--brand)" }}>
                 <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
                 Running · {currentNode ?? "starting"}
+                <button
+                  className="btn-ghost btn-sm"
+                  style={{ color: "var(--danger)", borderColor: "var(--danger)", fontSize: 12, padding: "2px 10px" }}
+                  onClick={() => {
+                    if (!runId) return;
+                    api.pipeline.cancel(runId).then(() => {
+                      setPageState("error");
+                      setErrorMsg("Pipeline cancelled by user.");
+                    }).catch(() => {
+                      setPageState("error");
+                      setErrorMsg("Cancelled (server may have already finished).");
+                    });
+                  }}
+                >
+                  ✕ Cancel
+                </button>
               </span>
             )}
             {pageState === "done" && (

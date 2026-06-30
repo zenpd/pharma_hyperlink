@@ -877,6 +877,13 @@ def _detect_references_pdf(
                         )
                     else:
                         _ref_bbox = _full_bbox
+                        _log.warning(
+                            "ocr_bbox_fallback_full_page",
+                            page=page_index,
+                            ref_text=ref.text,
+                            ref_start=ref.start,
+                            ref_end=ref.end,
+                        )
                     detections.append(
                         {
                             "is_pdf": True,
@@ -898,7 +905,7 @@ def _detect_references_pdf(
                             "llm_reasoning": ref.llm_reasoning,
                         }
                     )
-                span_idx += 1
+                    span_idx += 1  # unique per detection, not per page
             continue  # no fitz text blocks — skip normal block loop
 
         for block in page_dict.get("blocks", []):
