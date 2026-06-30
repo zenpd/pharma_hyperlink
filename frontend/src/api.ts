@@ -248,6 +248,10 @@ export const api = {
       window.open(`${PIPELINE_BASE}/run/${runId}/csv`, "_blank");
     },
 
+    /** Cancel a running pipeline (signals the runner to stop after current node) */
+    cancel: (runId: string) =>
+      post<{ run_id: string; signalled: boolean }>(`${PIPELINE_BASE}/run/${runId}/cancel`, {}),
+
     /** Before/after preview for one document in a finished run */
     documentPreview: (runId: string, doc: string) =>
       get<DocPreview>(`${PIPELINE_BASE}/run/${runId}/document-preview?doc=${encodeURIComponent(doc)}`),

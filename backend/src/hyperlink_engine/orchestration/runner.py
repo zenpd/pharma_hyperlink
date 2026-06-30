@@ -27,6 +27,21 @@ from hyperlink_engine.orchestration.state import PipelineState, run_store
 
 _log = get_logger("orchestration.runner")
 
+# Cancel events per run_id — set to cancel a running pipeline.
+_cancel_events: dict[str, threading.Event] = {}
+
+
+def cancel_run(run_id: str) -> bool:
+    """Signal a running pipeline to stop after the current node.
+
+    Returns True if a running pipeline was found and signalled, False otherwise.
+    """
+    ev = _cancel_events.get(run_id)
+    if ev is None:
+        return False
+    ev.set()
+    return True
+
 
 def _persist_run(state: PipelineState) -> None:
     """Write-through a finished run to Neo4j (best-effort, never fatal).
@@ -215,16 +230,15 @@ class PipelineRunner:
     # ── Sequential fallback path (no langgraph installed) ─────────────────────
 
     def _invoke_sequential(self, state: PipelineState) -> PipelineState:
+        cancel_ev = _cancel_events.get(state["run_id"])
         for node_name, node_fn in _resolve_nodes(state):
-            # Cooperative cancellation: honor a cancel request before each node.
-            if state.get("cancel_requested"):
+            if cancel_ev is not None and cancel_ev.is_set():
+                _log.info("pipeline_cancelled", run_id=state["run_id"], at_node=node_name)
                 state["status"] = "cancelled"
-                state["current_node"] = node_name
-                event_bus.emit(
-                    state["run_id"], node_name, "cancelled", {"reason": "user requested cancel"}
-                )
+                state["error"] = "Pipeline cancelled by user"
+                event_bus.emit(state["run_id"], node_name, "cancelled", {})
                 run_store.update(state)
-                break
+                return state
             try:
                 state = node_fn(state)
                 run_store.update(state)
@@ -265,10 +279,18 @@ class PipelineRunner:
 
         The caller can stream results via ``event_bus.subscribe_sse(run_id)``.
         Returns the thread so callers can join() if needed.
+        Cancel via ``cancel_run(run_id)``.
         """
-        def _run() -> None:
-            self.invoke(state, on_event=on_event)
+        run_id = state["run_id"]
+        cancel_ev = threading.Event()
+        _cancel_events[run_id] = cancel_ev
 
-        t = threading.Thread(target=_run, daemon=True, name=f"pipeline-{state['run_id']}")
+        def _run() -> None:
+            try:
+                self.invoke(state, on_event=on_event)
+            finally:
+                _cancel_events.pop(run_id, None)
+
+        t = threading.Thread(target=_run, daemon=True, name=f"pipeline-{run_id}")
         t.start()
         return t

@@ -176,20 +176,29 @@ def parse_pdf_document(loaded: LoadedPdf) -> PdfDocument:
 
         # ── Tier 3 fallback: OCR ─────────────────────────────────────────────
         # Triggered when both PyMuPDF and pdfplumber returned no text AND the
-        # page contained image blocks (classic scanned-PDF signature).
+        # page has visual content. Two cases:
+        #   • scanned PDFs  → raster image blocks (has_image_blocks)
+        #   • vector-path PDFs → bezier drawings with no text layer (get_drawings)
         # Gated by ocr_enabled + ocr_fallback_on_empty_page settings so this
         # is a strict no-op when OCR is not configured.
+        has_drawings = False
+        if not blocks_out:
+            try:
+                has_drawings = bool(page.get_drawings())
+            except Exception:  # pragma: no cover
+                pass
         if (
             not blocks_out
             and cfg.ocr_enabled
             and cfg.ocr_fallback_on_empty_page
-            and has_image_blocks
+            and (has_image_blocks or has_drawings)
         ):
             _log.info(
                 "pdf_ocr_fallback",
                 path=str(loaded.provenance.source_path),
                 page_index=page_index,
                 engine=cfg.ocr_engine,
+                trigger="drawings" if has_drawings else "image_blocks",
             )
             try:
                 ocr_text = page_text_via_ocr(
