@@ -763,6 +763,12 @@ def _cluster_image_rects(boxes: list[tuple]) -> list[tuple]:
     return rects
 
 
+# Cache keyed by (path_str, mtime_ns) — invalidated automatically when the file changes.
+# Capped at 32 entries (LRU-style drop) to prevent unbounded growth across many runs.
+_pdf_blocks_cache: "OrderedDict[tuple[str, int], list[dict[str, Any]]]" = OrderedDict()
+_PDF_BLOCKS_CACHE_MAX = 32
+
+
 def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True, render_images: bool = True) -> list[dict[str, Any]]:
     """Return a .pdf's content in reading order as *organized* preview blocks.
 
@@ -782,6 +788,15 @@ def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True, render_ima
     a project dependency; every failure path degrades gracefully so building a
     preview can never crash the request.
     """
+    # Cache hit — skip expensive OCR / table detection on repeated calls.
+    try:
+        _cache_key = (str(pdf_path), int(os.path.getmtime(pdf_path) * 1e9), detect_tables, render_images)
+        if _cache_key in _pdf_blocks_cache:
+            _pdf_blocks_cache.move_to_end(_cache_key)
+            return _pdf_blocks_cache[_cache_key]
+    except OSError:
+        _cache_key = None  # file not found — proceed anyway, will fail below
+
     try:
         import fitz  # PyMuPDF — lazy import keeps API startup fast
     except ImportError:
@@ -880,11 +895,19 @@ def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True, render_ima
                     import base64
 
                     page_w = float(page.rect.width) or 612.0
-                    raw_boxes = [
-                        ib["bbox"]
-                        for ib in page.get_text("dict").get("blocks", [])
-                        if ib.get("type") == 1 and ib.get("bbox")
-                    ]
+                    # Use get_images() + get_image_rects() instead of get_text("dict") type=1
+                    # blocks. Clinical PDFs embed figures as form XObjects — these appear in
+                    # get_images() but NOT as type=1 content-stream blocks, so the old approach
+                    # returned 0 images for almost every real dossier document.
+                    raw_boxes = []
+                    try:
+                        for _img_info in page.get_images(full=False):
+                            _xref = _img_info[0]
+                            for _rect in page.get_image_rects(_xref):
+                                if _rect.width > 4 and _rect.height > 4:
+                                    raw_boxes.append((_rect.x0, _rect.y0, _rect.x1, _rect.y1))
+                    except Exception:  # noqa: BLE001 — image list is best-effort
+                        pass
                     for x0, y0, x1, y1 in _cluster_image_rects(raw_boxes):
                         if (x1 - x0) < 8 or (y1 - y0) < 8:
                             continue
@@ -962,6 +985,13 @@ def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True, render_ima
             document.close()
         except Exception:  # pragma: no cover — best-effort cleanup
             pass
+
+    # Write result to cache (LRU eviction when full).
+    if _cache_key is not None:
+        _pdf_blocks_cache[_cache_key] = blocks
+        _pdf_blocks_cache.move_to_end(_cache_key)
+        while len(_pdf_blocks_cache) > _PDF_BLOCKS_CACHE_MAX:
+            _pdf_blocks_cache.popitem(last=False)
 
     return blocks
 
