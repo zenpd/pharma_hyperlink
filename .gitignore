@@ -99,3 +99,7 @@ neo4j_data/
 redis_data/
 
 graphify-out/
+
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts

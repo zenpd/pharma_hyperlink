@@ -763,7 +763,7 @@ def _cluster_image_rects(boxes: list[tuple]) -> list[tuple]:
     return rects
 
 
-def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True) -> list[dict[str, Any]]:
+def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True, render_images: bool = True) -> list[dict[str, Any]]:
     """Return a .pdf's content in reading order as *organized* preview blocks.
 
     Mirrors the output shape of ``_read_docx_blocks`` so the Run Compare
@@ -871,30 +871,32 @@ def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True) -> list[di
             #     page region captures the figure exactly as drawn (tiles + vector +
             #     labels) as a single clean picture, sized to its on-page width so a
             #     high-res figure doesn't blow up to the full pane. BEFORE/AFTER/
-            #     Reference View share the renderer, so all three show it. Perf
-            #     intentionally not gated (demo completeness); size = crash-safety.
+            #     Reference View share the renderer, so all three show it. Skipped on
+            #     the text-only (snippet) parse via ``render_images=False`` — the
+            #     snippet search discards images, so rasterizing them is pure waste.
             image_items: list[tuple[float, str, float]] = []
-            try:
-                import base64
+            if render_images:
+                try:
+                    import base64
 
-                page_w = float(page.rect.width) or 612.0
-                raw_boxes = [
-                    ib["bbox"]
-                    for ib in page.get_text("dict").get("blocks", [])
-                    if ib.get("type") == 1 and ib.get("bbox")
-                ]
-                for x0, y0, x1, y1 in _cluster_image_rects(raw_boxes):
-                    if (x1 - x0) < 8 or (y1 - y0) < 8:
-                        continue
-                    pix = page.get_pixmap(clip=fitz.Rect(x0, y0, x1, y1), matrix=fitz.Matrix(2, 2))
-                    png = pix.tobytes("png")
-                    if not png or len(png) > 16_000_000:  # crash-safety, not perf
-                        continue
-                    wf = max(0.08, min(1.0, (x1 - x0) / page_w if page_w else 1.0))
-                    uri = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
-                    image_items.append((float(y0), uri, wf))
-            except Exception:  # noqa: BLE001 — image extraction is best-effort
-                image_items = []
+                    page_w = float(page.rect.width) or 612.0
+                    raw_boxes = [
+                        ib["bbox"]
+                        for ib in page.get_text("dict").get("blocks", [])
+                        if ib.get("type") == 1 and ib.get("bbox")
+                    ]
+                    for x0, y0, x1, y1 in _cluster_image_rects(raw_boxes):
+                        if (x1 - x0) < 8 or (y1 - y0) < 8:
+                            continue
+                        pix = page.get_pixmap(clip=fitz.Rect(x0, y0, x1, y1), matrix=fitz.Matrix(2, 2))
+                        png = pix.tobytes("png")
+                        if not png or len(png) > 16_000_000:  # crash-safety, not perf
+                            continue
+                        wf = max(0.08, min(1.0, (x1 - x0) / page_w if page_w else 1.0))
+                        uri = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+                        image_items.append((float(y0), uri, wf))
+                except Exception:  # noqa: BLE001 — image extraction is best-effort
+                    image_items = []
 
             page_has_content = bool(table_items or para_items or image_items)
 
@@ -972,25 +974,31 @@ def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True) -> list[di
 # (resolved path, mtime, size) is always correct and turns "24s on every click"
 # into "24s once, then instant". Bounded LRU; thread-safe (the pipeline runs in
 # background threads and FastAPI serves requests from a threadpool).
-_DOC_BLOCKS_CACHE: "OrderedDict[tuple[str, int, int, bool], list[dict[str, Any]]]" = OrderedDict()
+_DOC_BLOCKS_CACHE: "OrderedDict[tuple[str, int, int, bool, bool], list[dict[str, Any]]]" = OrderedDict()
 _DOC_BLOCKS_CACHE_LOCK = threading.Lock()
-_DOC_BLOCKS_CACHE_MAX = 64  # documents
+try:
+    _DOC_BLOCKS_CACHE_MAX = int(os.environ.get("HYPERLINK_DOC_BLOCKS_CACHE_MAX", "256"))
+except ValueError:
+    _DOC_BLOCKS_CACHE_MAX = 256
 
 
-def _doc_blocks_cache_key(path: "Path", detect_tables: bool) -> tuple[str, int, int, bool] | None:
+def _doc_blocks_cache_key(
+    path: "Path", detect_tables: bool, render_images: bool
+) -> "tuple[str, int, int, bool, bool] | None":
     """Identity key for the parsed-block cache, or None if the file is unstat-able.
 
-    ``detect_tables`` is part of the key so the cheap text-only parse (snippet
-    search) and the full grid parse (preview render) cache independently.
+    ``detect_tables`` and ``render_images`` are part of the key so the cheap
+    text-only parse (snippet search) and the full grid+image parse (preview
+    render) cache independently.
     """
     try:
         st = path.stat()
     except OSError:
         return None
-    return (str(path.resolve()), st.st_mtime_ns, st.st_size, detect_tables)
+    return (str(path.resolve()), st.st_mtime_ns, st.st_size, detect_tables, render_images)
 
 
-def _read_doc_blocks(path: "Path", *, detect_tables: bool = True) -> list[dict[str, Any]]:
+def _read_doc_blocks(path: "Path", *, detect_tables: bool = True, render_images: bool = True) -> list[dict[str, Any]]:
     """Read a .docx or .pdf into the shared preview-block shape (memoized).
 
     Single dispatch point for the before/after preview endpoints so callers no
@@ -1006,7 +1014,7 @@ def _read_doc_blocks(path: "Path", *, detect_tables: bool = True) -> list[dict[s
     returned list is treated as read-only by every caller, so it is shared, not
     copied, to keep cache hits free.
     """
-    key = _doc_blocks_cache_key(path, detect_tables)
+    key = _doc_blocks_cache_key(path, detect_tables, render_images)
     if key is not None:
         with _DOC_BLOCKS_CACHE_LOCK:
             hit = _DOC_BLOCKS_CACHE.get(key)
@@ -1018,7 +1026,7 @@ def _read_doc_blocks(path: "Path", *, detect_tables: bool = True) -> list[dict[s
     if suffix == ".docx":
         blocks = _read_docx_blocks(path)  # .docx tables are cheap to extract
     elif suffix == ".pdf":
-        blocks = _read_pdf_blocks(path, detect_tables=detect_tables)
+        blocks = _read_pdf_blocks(path, detect_tables=detect_tables, render_images=render_images)
     else:
         blocks = []
 
@@ -2261,7 +2269,7 @@ def create_app(
                 # the expensive PDF table-grid detector. This keeps the across-
                 # all-documents candidate scan fast even when big PDFs are in the
                 # run (the dominant cause of the slow Reference View).
-                for blk in _read_doc_blocks(path, detect_tables=False):
+                for blk in _read_doc_blocks(path, detect_tables=False, render_images=False):
                     if blk.get("type") == "table" and blk.get("rows"):
                         rows = [" | ".join(c for c in r if c) for r in blk["rows"]]
                         rows = [r for r in rows if r.strip(" |")]

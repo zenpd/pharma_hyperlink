@@ -111,6 +111,26 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
 // backward-compatible with callers that pass no argument.
 const rid = (v: unknown): string => (typeof v === "string" ? v : "");
 
+// ── Preview fetch cache (perf) ────────────────────────────────────────────
+// Re-visiting a doc/stage in Run Compare or Reference View shouldn't re-hit
+// the server. Entries are keyed `${runId}::${doc}::${stage}` (stage omitted
+// for documentPreview). Invalidated on updateLink / advanceStage success so
+// previews never go stale after an edit.
+const _previewCache = new Map<string, Promise<DocPreview>>();
+
+function _previewCacheKey(runId: string, doc: string, stage?: string): string {
+  return stage ? `${runId}::${doc}::${stage}` : `${runId}::${doc}`;
+}
+
+function _invalidatePreviewCache(runId: string): void {
+  const prefix = `${runId}::`;
+  for (const key of _previewCache.keys()) {
+    if (key.startsWith(prefix)) {
+      _previewCache.delete(key);
+    }
+  }
+}
+
 export const api = {
   // ── Report endpoints (demo seed OR live run) ─────────────────────────────
   score: (runId = "") =>
@@ -193,10 +213,6 @@ export const api = {
     run: (runId: string) =>
       post<{ run_id: string; status: string }>(`${PIPELINE_BASE}/run/${runId}`),
 
-    /** Request cancellation of a running pipeline (cooperative — stops at next node) */
-    cancel: (runId: string) =>
-      post<{ run_id: string; status: string }>(`${PIPELINE_BASE}/run/${runId}/cancel`),
-
     /** Open a live SSE stream — caller must close EventSource when done */
     stream: (runId: string): EventSource =>
       new EventSource(`${PIPELINE_BASE}/stream/${runId}`),
@@ -253,8 +269,16 @@ export const api = {
       post<{ run_id: string; signalled: boolean }>(`${PIPELINE_BASE}/run/${runId}/cancel`, {}),
 
     /** Before/after preview for one document in a finished run */
-    documentPreview: (runId: string, doc: string) =>
-      get<DocPreview>(`${PIPELINE_BASE}/run/${runId}/document-preview?doc=${encodeURIComponent(doc)}`),
+    documentPreview: (runId: string, doc: string) => {
+      const key = _previewCacheKey(runId, doc);
+      const cached = _previewCache.get(key);
+      if (cached) return cached;
+      const p = get<DocPreview>(`${PIPELINE_BASE}/run/${runId}/document-preview?doc=${encodeURIComponent(doc)}`);
+      _previewCache.set(key, p);
+      // Evict on rejection so a failed fetch is retried next time.
+      p.catch(() => _previewCache.delete(key));
+      return p;
+    },
 
     /** Google-style destination preview for a link (target heading + excerpt) */
     linkSnippet: (runId: string, doc: string, anchor = "") =>
@@ -267,16 +291,26 @@ export const api = {
       get<RunStages>(`${PIPELINE_BASE}/run/${runId}/stages`),
 
     /** Snapshot the prior stage into a new lifecycle stage */
-    advanceStage: (runId: string, stage: string, note = "") =>
-      post<{ run_id: string; stage: string; doc_count: number }>(
+    advanceStage: async (runId: string, stage: string, note = "") => {
+      const result = await post<{ run_id: string; stage: string; doc_count: number }>(
         `${PIPELINE_BASE}/run/${runId}/advance-stage`, { stage, note },
-      ),
+      );
+      _invalidatePreviewCache(runId);
+      return result;
+    },
 
     /** Before/after preview for one document at a specific lifecycle stage */
-    stagePreview: (runId: string, doc: string, stage: string) =>
-      get<DocPreview>(
+    stagePreview: (runId: string, doc: string, stage: string) => {
+      const key = _previewCacheKey(runId, doc, stage);
+      const cached = _previewCache.get(key);
+      if (cached) return cached;
+      const p = get<DocPreview>(
         `${PIPELINE_BASE}/run/${runId}/stage-preview?doc=${encodeURIComponent(doc)}&stage=${encodeURIComponent(stage)}`,
-      ),
+      );
+      _previewCache.set(key, p);
+      p.catch(() => _previewCache.delete(key));
+      return p;
+    },
 
     /**
      * Inline hyperlink edit — updates target_doc, target_anchor, and/or status
@@ -296,6 +330,7 @@ export const api = {
         throw new Error(`Update failed: ${await res.text()}`);
       }
       const data = await res.json() as { updated: Link };
+      _invalidatePreviewCache(runId);
       return data.updated;
     },
   },
