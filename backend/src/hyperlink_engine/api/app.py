@@ -763,12 +763,6 @@ def _cluster_image_rects(boxes: list[tuple]) -> list[tuple]:
     return rects
 
 
-# Cache keyed by (path_str, mtime_ns) — invalidated automatically when the file changes.
-# Capped at 32 entries (LRU-style drop) to prevent unbounded growth across many runs.
-_pdf_blocks_cache: "OrderedDict[tuple[str, int], list[dict[str, Any]]]" = OrderedDict()
-_PDF_BLOCKS_CACHE_MAX = 32
-
-
 def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True, render_images: bool = True) -> list[dict[str, Any]]:
     """Return a .pdf's content in reading order as *organized* preview blocks.
 
@@ -788,15 +782,6 @@ def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True, render_ima
     a project dependency; every failure path degrades gracefully so building a
     preview can never crash the request.
     """
-    # Cache hit — skip expensive OCR / table detection on repeated calls.
-    try:
-        _cache_key = (str(pdf_path), int(os.path.getmtime(pdf_path) * 1e9), detect_tables, render_images)
-        if _cache_key in _pdf_blocks_cache:
-            _pdf_blocks_cache.move_to_end(_cache_key)
-            return _pdf_blocks_cache[_cache_key]
-    except OSError:
-        _cache_key = None  # file not found — proceed anyway, will fail below
-
     try:
         import fitz  # PyMuPDF — lazy import keeps API startup fast
     except ImportError:
@@ -986,13 +971,6 @@ def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True, render_ima
         except Exception:  # pragma: no cover — best-effort cleanup
             pass
 
-    # Write result to cache (LRU eviction when full).
-    if _cache_key is not None:
-        _pdf_blocks_cache[_cache_key] = blocks
-        _pdf_blocks_cache.move_to_end(_cache_key)
-        while len(_pdf_blocks_cache) > _PDF_BLOCKS_CACHE_MAX:
-            _pdf_blocks_cache.popitem(last=False)
-
     return blocks
 
 
@@ -1068,6 +1046,37 @@ def _read_doc_blocks(path: "Path", *, detect_tables: bool = True, render_images:
                 _DOC_BLOCKS_CACHE.popitem(last=False)  # evict least-recently-used
 
     return blocks
+
+
+def _prewarm_doc_cache(state: "Any") -> None:
+    """Pre-warm the document block cache for all files in a completed run.
+
+    Called from the pipeline background thread via the ``on_done`` hook in
+    ``pipeline_run``. Warms both the full-render parse (detect_tables=True,
+    render_images=True — used by the BEFORE/AFTER Compare panel) and the
+    text-only parse (detect_tables=False, render_images=False — used by the
+    snippet search). This ensures the first user click in Run Compare is a
+    cache hit rather than a cold 10-20s parse.
+
+    Only fires when the run reaches ``status == "done"``; errors and cancels
+    are ignored. Any individual file failure is swallowed — pre-warming is
+    best-effort and must never disrupt the pipeline result.
+    """
+    if state.get("status") != "done":
+        return
+    paths_to_warm: list["Path"] = []
+    for p in state.get("linked_files") or []:
+        paths_to_warm.append(Path(p))
+    for p in state.get("input_files") or []:
+        paths_to_warm.append(Path(p))
+    for path in paths_to_warm:
+        try:
+            if not path.exists() or path.suffix.lower() not in (".pdf", ".docx"):
+                continue
+            _read_doc_blocks(path, detect_tables=True, render_images=True)
+            _read_doc_blocks(path, detect_tables=False, render_images=False)
+        except Exception:  # noqa: BLE001 — pre-warm is best-effort
+            pass
 
 
 # App factory
@@ -1715,7 +1724,7 @@ def create_app(
                 raise HTTPException(status_code=409, detail="Pipeline already running")
 
             runner = PipelineRunner()
-            runner.run_in_background(state)
+            runner.run_in_background(state, on_done=_prewarm_doc_cache)
             return {"run_id": run_id, "status": "started"}
 
         @app.post("/api/pipeline/run/{run_id}/cancel", dependencies=_CLASSIFIED_GATE)

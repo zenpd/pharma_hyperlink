@@ -274,12 +274,15 @@ class PipelineRunner:
         self,
         state: PipelineState,
         on_event: Callable[[dict[str, Any]], None] | None = None,
+        on_done: "Callable[[PipelineState], None] | None" = None,
     ) -> threading.Thread:
         """Run the pipeline in a background daemon thread.
 
         The caller can stream results via ``event_bus.subscribe_sse(run_id)``.
         Returns the thread so callers can join() if needed.
         Cancel via ``cancel_run(run_id)``.
+        ``on_done`` is called with the final state after the pipeline finishes
+        (success, error, or cancel) — never raises; any exception is swallowed.
         """
         run_id = state["run_id"]
         cancel_ev = threading.Event()
@@ -287,7 +290,12 @@ class PipelineRunner:
 
         def _run() -> None:
             try:
-                self.invoke(state, on_event=on_event)
+                final = self.invoke(state, on_event=on_event)
+                if on_done is not None:
+                    try:
+                        on_done(final)
+                    except Exception:  # noqa: BLE001
+                        pass
             finally:
                 _cancel_events.pop(run_id, None)
 

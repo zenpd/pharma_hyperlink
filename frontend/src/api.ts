@@ -117,6 +117,10 @@ const rid = (v: unknown): string => (typeof v === "string" ? v : "");
 // for documentPreview). Invalidated on updateLink / advanceStage success so
 // previews never go stale after an edit.
 const _previewCache = new Map<string, Promise<DocPreview>>();
+// Snippet cache — link hover tooltip calls are frequent and the parse is
+// expensive. Keyed `${runId}::${doc}::${anchor}`. Invalidated alongside
+// _previewCache on updateLink / advanceStage so stale anchors are re-fetched.
+const _snippetCache = new Map<string, Promise<LinkSnippet>>();
 
 function _previewCacheKey(runId: string, doc: string, stage?: string): string {
   return stage ? `${runId}::${doc}::${stage}` : `${runId}::${doc}`;
@@ -125,9 +129,10 @@ function _previewCacheKey(runId: string, doc: string, stage?: string): string {
 function _invalidatePreviewCache(runId: string): void {
   const prefix = `${runId}::`;
   for (const key of _previewCache.keys()) {
-    if (key.startsWith(prefix)) {
-      _previewCache.delete(key);
-    }
+    if (key.startsWith(prefix)) _previewCache.delete(key);
+  }
+  for (const key of _snippetCache.keys()) {
+    if (key.startsWith(prefix)) _snippetCache.delete(key);
   }
 }
 
@@ -281,10 +286,17 @@ export const api = {
     },
 
     /** Google-style destination preview for a link (target heading + excerpt) */
-    linkSnippet: (runId: string, doc: string, anchor = "") =>
-      get<LinkSnippet>(
+    linkSnippet: (runId: string, doc: string, anchor = "") => {
+      const key = `${runId}::${doc}::${anchor}`;
+      const cached = _snippetCache.get(key);
+      if (cached) return cached;
+      const p = get<LinkSnippet>(
         `${PIPELINE_BASE}/run/${runId}/snippet?doc=${encodeURIComponent(doc)}&anchor=${encodeURIComponent(anchor)}`,
-      ),
+      );
+      _snippetCache.set(key, p);
+      p.catch(() => _snippetCache.delete(key));
+      return p;
+    },
 
     /** Submission-lifecycle stages for a run (raw → linked → compliance → FDA) */
     stages: (runId: string) =>
