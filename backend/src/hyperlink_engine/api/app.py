@@ -880,6 +880,7 @@ def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True, render_ima
                     import base64
 
                     page_w = float(page.rect.width) or 612.0
+                    page_h = float(page.rect.height) or 792.0
                     # Use get_images() + get_image_rects() instead of get_text("dict") type=1
                     # blocks. Clinical PDFs embed figures as form XObjects — these appear in
                     # get_images() but NOT as type=1 content-stream blocks, so the old approach
@@ -895,6 +896,12 @@ def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True, render_ima
                         pass
                     for x0, y0, x1, y1 in _cluster_image_rects(raw_boxes):
                         if (x1 - x0) < 8 or (y1 - y0) < 8:
+                            continue
+                        # Skip full-page scans: an OCR'd searchable PDF embeds the
+                        # scanned page as a full-page image + an invisible text
+                        # layer, so render the OCR TEXT, not the page bitmap. Real
+                        # inline figures are sub-page regions and are kept.
+                        if (x1 - x0) >= 0.9 * page_w and (y1 - y0) >= 0.9 * page_h:
                             continue
                         pix = page.get_pixmap(clip=fitz.Rect(x0, y0, x1, y1), matrix=fitz.Matrix(2, 2))
                         png = pix.tobytes("png")
@@ -1046,6 +1053,60 @@ def _read_doc_blocks(path: "Path", *, detect_tables: bool = True, render_images:
                 _DOC_BLOCKS_CACHE.popitem(last=False)  # evict least-recently-used
 
     return blocks
+
+
+def _is_scanned_pdf(path: "Path", *, sample: int = 4, area_frac: float = 0.9) -> bool:
+    """True when a PDF looks scanned / OCR'd — most sampled pages are dominated
+    by a single full-page image (the scan), with any real text only in an OCR
+    layer over that image.
+
+    Why this exists: such documents have **no ruled tables and no sub-page
+    figures** (each page *is* one full-page image, which ``_read_pdf_blocks``
+    already skips at render time), so the expensive ``find_tables`` +
+    figure-rasterization passes do ~18s of work that yields *zero* table/image
+    blocks. Detecting the scan lets the preview parse text-only — the returned
+    blocks are identical, just ~40x faster. Native (text) PDFs have no full-page
+    image and return False, so their preview parse is unchanged; non-PDFs and
+    any error return False (fall back to the full, unchanged parse).
+    """
+    if path.suffix.lower() != ".pdf":
+        return False
+    try:
+        import fitz  # PyMuPDF — same lazy import as the readers
+    except ImportError:
+        return False
+    try:
+        document = fitz.open(str(path))
+    except Exception:  # noqa: BLE001 — unreadable ⇒ treat as not-scanned, full parse
+        return False
+    try:
+        page_count = document.page_count
+        if page_count == 0:
+            return False
+        checked = 0
+        full_page_image = 0
+        for page_index in range(min(sample, page_count)):
+            page = document.load_page(page_index)
+            page_w = float(page.rect.width) or 612.0
+            page_h = float(page.rect.height) or 792.0
+            checked += 1
+            for blk in page.get_text("dict").get("blocks", []):
+                if blk.get("type") != 1:  # 1 == image block
+                    continue
+                x0, y0, x1, y1 = blk.get("bbox", (0.0, 0.0, 0.0, 0.0))
+                if (x1 - x0) >= area_frac * page_w and (y1 - y0) >= area_frac * page_h:
+                    full_page_image += 1
+                    break  # one full-page image is enough for this page
+        # Require a MAJORITY of sampled pages to be full-page images so a single
+        # scanned cover page on an otherwise text PDF is NOT misread as scanned.
+        return checked > 0 and full_page_image * 2 >= checked
+    except Exception:  # noqa: BLE001 — best-effort probe; on any error, full parse
+        return False
+    finally:
+        try:
+            document.close()
+        except Exception:  # pragma: no cover — best-effort cleanup
+            pass
 
 
 def _prewarm_doc_cache(state: "Any") -> None:
@@ -2178,7 +2239,32 @@ def create_app(
             try:
                 # .docx and .pdf are both supported; .pdf previously raised here
                 # because _read_docx_blocks can't open a PDF.
-                paragraphs: list[dict[str, Any]] = _read_doc_blocks(orig_path)
+                #
+                # When OCR preprocessing produced a searchable copy for this run,
+                # the raw upload (orig_path) is an image-only scan with NO
+                # extractable text — the BEFORE panel would be BLANK and slow (a
+                # per-page pdfplumber fallback fires on every textless page).
+                # Prefer the OCR'd copy under the run's ``ocr/`` dir: it carries
+                # the recovered text, so the compare is meaningful AND fast. Native
+                # docs (.docx / text PDFs) have no ocr/ copy → preview_path stays
+                # orig_path, so their preview is unchanged.
+                preview_path = orig_path
+                if orig_path.suffix.lower() == ".pdf":
+                    ocr_copy = orig_path.parent.parent / "ocr" / orig_path.name
+                    if ocr_copy.exists():
+                        preview_path = ocr_copy
+                # A scanned / OCR'd PDF has no ruled tables and no sub-page figures
+                # (each page is one full-page image, already skipped by the figure
+                # pass), so the table-detection + figure passes do ~18s of work
+                # that yields nothing. Parse text-only for scans — the visible
+                # blocks are identical, ~40x faster. Native PDFs/.docx keep the
+                # full parse (grids + figures), so they are unaffected.
+                _scanned = _is_scanned_pdf(preview_path)
+                paragraphs: list[dict[str, Any]] = _read_doc_blocks(
+                    preview_path,
+                    detect_tables=not _scanned,
+                    render_images=not _scanned,
+                )
             except Exception as exc:  # noqa: BLE001
                 raise HTTPException(status_code=500, detail=f"Failed to read document: {exc}") from exc
 

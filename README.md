@@ -176,6 +176,30 @@ Key knobs:
 - `HYPERLINK_SUPERTOKENS_CONNECTION_URI` / `HYPERLINK_SUPERTOKENS_API_KEY` — SuperTokens core (`http://localhost:3567`)
 - `HYPERLINK_API_DOMAIN` / `HYPERLINK_WEBSITE_DOMAIN` — `http://localhost:8000` / `http://localhost:5174` in dev
 - `HYPERLINK_DEFAULT_CLASSIFICATION` — `classified` (deny-by-default) or `unclassified` for new runs
+- `HYPERLINK_OCR_ENABLED` — `false` (default). Set to `true` to enable OCR preprocessing for scanned (image-only) PDFs. Requires the `ocr` extra plus system Tesseract and Ghostscript (see below).
+- `HYPERLINK_OCR_LANGUAGE` — Tesseract language code(s), e.g. `eng` (default), `eng+deu`
+
+### Scanned PDF support (optional)
+
+Scanned / image-only PDFs contain no extractable text and produce blank pipeline output by default. Enable OCR preprocessing to make them fully linkable:
+
+```bash
+# 1. Install system dependencies (macOS)
+brew install tesseract ghostscript
+
+# 2. Install the Python extra (from repo root, .venv activated)
+./.venv/bin/python -m pip install -e "backend[ocr]"
+# or, if using Poetry:
+cd backend && poetry install --extras ocr
+
+# 3. Enable in backend/.env
+HYPERLINK_OCR_ENABLED=true
+HYPERLINK_OCR_LANGUAGE=eng   # or eng+deu etc.
+```
+
+When enabled, each scanned PDF is converted to a searchable copy (stored under the run's `ocr/` directory) before the rest of the pipeline runs. The original file is never modified. Text PDFs and Word documents are unaffected — the default path is byte-identical with `OCR_ENABLED=false`.
+
+> **Dependency note:** `ocrmypdf` is pinned to `^16.0.0`. Do not upgrade to v17 — it pulls `pikepdf ≥ 10` which conflicts with the injector's `pikepdf ^9` requirement.
 
 ---
 

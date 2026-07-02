@@ -59,6 +59,10 @@ supertokens-python = { version = "^0.31.0", optional = true }
 pytesseract = { version = "^0.3.0", optional = true }
 easyocr = { version = "^1.7", optional = true }
 Pillow = { version = "^10.0", optional = true }
+# ocrmypdf: turn scanned (image-only) PDFs into searchable PDFs at ingestion.
+# Pinned ^16.0.0 — v17 pulls pikepdf ≥10 which conflicts with the injector's
+# pikepdf ^9 requirement. Requires system Tesseract + Ghostscript.
+ocrmypdf = { version = "^16.0.0", optional = true }
 
 # Foundations
 pydantic = "^2.7.0"
@@ -88,6 +92,7 @@ pipeline = ["celery", "redis"]
 graph = ["neo4j"]
 auth = ["supertokens-python"]
 references = ["gliner"]
+ocr = ["ocrmypdf"]
 all = [
     "ollama",
     "sentence-transformers",
@@ -100,6 +105,7 @@ all = [
     "litellm",
     "supertokens-python",
     "gliner",
+    "ocrmypdf",
 ]
 
 [tool.poetry.scripts]

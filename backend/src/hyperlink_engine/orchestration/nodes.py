@@ -48,25 +48,54 @@ def _sha256(path: Path) -> str:
 
 
 def node_load_dossier(state: PipelineState) -> PipelineState:
-    """Hash each uploaded file and ensure the output directory exists."""
+    """Hash each uploaded file and ensure the output directory exists.
+
+    Optional OCR preprocessing (gated by ``ocr_enabled``, default off): a
+    scanned / image-only PDF is replaced by a searchable copy so parse / detect /
+    inject downstream can read its text. A text PDF, a failure, or OCR disabled
+    leaves the path unchanged — default behaviour is byte-identical.
+    """
     _emit(state, "load_dossier", "running")
     t0 = time.time()
 
     output_dir: Path = state["output_dir"]
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # OCR gate — resolved once; default off keeps this whole block inert.
+    try:
+        from hyperlink_engine.config.settings import get_settings
+
+        _s = get_settings()
+        ocr_on, ocr_lang = _s.ocr_enabled, _s.ocr_language
+    except Exception:  # pragma: no cover — settings must never break a run
+        ocr_on, ocr_lang = False, "eng"
+    ocr_dir = output_dir.parent / "ocr"
+    ocr_applied = 0
+
     records = []
     for fp in state["input_files"]:
         fp = Path(fp)
-        records.append(
-            {
-                "source_path": str(fp),
-                "filename": fp.name,
-                "sha256": _sha256(fp),
-                "file_size_bytes": fp.stat().st_size,
-                "suffix": fp.suffix.lower(),
-            }
-        )
+        src = fp
+        if ocr_on and fp.suffix.lower() == ".pdf":
+            try:
+                from hyperlink_engine.core.ingestion.ocr_preprocess import maybe_ocr
+
+                src = maybe_ocr(fp, ocr_dir, language=ocr_lang)
+            except Exception as exc:  # noqa: BLE001 — never break ingestion
+                _log.warning("ocr_preprocess_error", file=str(fp), error=str(exc))
+                src = fp
+        record = {
+            "source_path": str(src),
+            "filename": fp.name,
+            "sha256": _sha256(src),
+            "file_size_bytes": src.stat().st_size,
+            "suffix": src.suffix.lower(),
+        }
+        if src != fp:  # a searchable copy replaced the scan
+            record["ocr_applied"] = True
+            record["original_source_path"] = str(fp)
+            ocr_applied += 1
+        records.append(record)
 
     state["ingest_records"] = records
     _emit(
@@ -75,6 +104,7 @@ def node_load_dossier(state: PipelineState) -> PipelineState:
         "done",
         files=len(records),
         elapsed=round(time.time() - t0, 2),
+        **({"ocr_applied": ocr_applied} if ocr_applied else {}),
     )
     return state
 
