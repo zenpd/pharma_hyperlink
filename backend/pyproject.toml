@@ -60,9 +60,10 @@ pytesseract = { version = "^0.3.0", optional = true }
 easyocr = { version = "^1.7", optional = true }
 Pillow = { version = "^10.0", optional = true }
 # ocrmypdf: turn scanned (image-only) PDFs into searchable PDFs at ingestion.
-# Pinned ^16.0.0 — v17 pulls pikepdf ≥10 which conflicts with the injector's
-# pikepdf ^9 requirement. Requires system Tesseract + Ghostscript.
-ocrmypdf = { version = "^16.0.0", optional = true }
+# Pinned ==16.0.4 — 16.13+ and v17 pull pikepdf ≥10 which conflicts with the
+# injector's pikepdf ^9 requirement. 16.0.4 requires only pikepdf>=8.10.1.
+# Requires system Tesseract + Ghostscript (brew install tesseract ghostscript).
+ocrmypdf = { version = "==16.0.4", optional = true }
 
 # Foundations
 pydantic = "^2.7.0"
