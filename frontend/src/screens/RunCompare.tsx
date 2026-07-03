@@ -314,7 +314,7 @@ export function RunCompare({ onBack, active = true, initialRunId, initialDoc, on
 
       {/* Submission lifecycle stepper — per-stage before/after */}
       {runId && stages.length > 0 && (
-        <div className="card" style={{ padding: "14px 18px", marginTop: 12 }}>
+        <div className="card" style={{ padding: "14px 18px", marginTop: 12, background: "var(--success-bg)", borderColor: "#c3e9d3" }}>
           <div style={{
             fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase",
             letterSpacing: "0.06em", marginBottom: 10,
@@ -340,9 +340,10 @@ export function RunCompare({ onBack, active = true, initialRunId, initialDoc, on
                     onClick={() => canSelect && setStage(s.stage)}
                     title={s.description}
                     style={{
-                      minWidth: 150, padding: "8px 12px", borderRadius: 8,
-                      border: `1.5px solid ${isActive ? "var(--primary)" : s.available ? "var(--border)" : "var(--border)"}`,
-                      background: isActive ? "var(--primary-bg, rgba(99,102,241,0.10))" : s.available ? "var(--surface)" : "rgba(0,0,0,0.03)",
+                      minWidth: 150, padding: "8px 12px", borderRadius: "var(--radius)",
+                      border: `${isActive ? "2px" : "1.5px"} solid ${s.available ? "var(--success)" : "var(--border)"}`,
+                      background: s.available ? "#d3f0e0" : "var(--surface)",
+                      boxShadow: isActive ? "0 0 0 3px rgba(21,115,71,0.18)" : "none",
                       cursor: canSelect ? "pointer" : "default",
                       opacity: s.available ? 1 : 0.6,
                       transition: "all 0.15s",
@@ -350,7 +351,7 @@ export function RunCompare({ onBack, active = true, initialRunId, initialDoc, on
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 13 }}>{s.available ? "✅" : "○"}</span>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>{s.label}</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: s.available ? "var(--success)" : "var(--text)" }}>{s.label}</span>
                     </div>
                     <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
                       {s.available ? `${s.doc_count} doc${s.doc_count === 1 ? "" : "s"}` : "not generated"}
@@ -380,10 +381,10 @@ export function RunCompare({ onBack, active = true, initialRunId, initialDoc, on
             if (!changes.length) return null;
             return (
               <div style={{
-                marginTop: 10, padding: "8px 12px", borderRadius: 6,
-                background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.35)",
+                marginTop: 10, padding: "8px 12px", borderRadius: "var(--radius)",
+                background: "var(--success-bg)", border: "1px solid var(--border)",
               }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--success, #047857)", marginBottom: 4 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--success)", marginBottom: 4 }}>
                   ✦ CHANGES APPLIED AT THIS STAGE{sel?.meta?.by ? ` · by ${sel.meta.by}` : ""}
                 </div>
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--text)" }}>
