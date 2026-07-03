@@ -322,8 +322,11 @@ function AppShell() {
             </svg>
           </button>
 
-          <div className="page-name">
-            {active ? active.label : "Hyperlink Engine"}
+          <div>
+            <div className="page-name">
+              {active ? active.label : "Hyperlink Engine"}
+            </div>
+            <div className="page-sub">Regulatory cross-reference linking</div>
           </div>
 
           {/* <SecurityControls /> */}
@@ -354,8 +357,15 @@ function AppShell() {
           {/* ── Sidebar ── */}
           {navOpen && (
             <nav className="sidebar">
-              <div className="brand">
-                <span className="brand-mark">◆</span>
+              <div className="brand" style={{ cursor: "pointer" }} onClick={() => navigate("pipeline")}>
+                <span className="brand-mark">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                       strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 15l6-6" />
+                    <path d="M10.5 6.5l1-1a4 4 0 0 1 6 6l-1 1" />
+                    <path d="M13.5 17.5l-1 1a4 4 0 0 1-6-6l1-1" />
+                  </svg>
+                </span>
                 <div>
                   <div className="brand-name">Hyperlink Engine</div>
                   <div className="brand-sub">Regulatory Linker</div>
