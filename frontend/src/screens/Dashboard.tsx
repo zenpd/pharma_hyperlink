@@ -103,67 +103,74 @@ export function Dashboard({ onViewIssues, onViewComparison, onViewDetectionTrace
   const warnings  = anomalies.filter((a) => a.severity === "warning").length;
 
   return (
-    <div className="page">
-      <div className="page-title" style={{ fontFamily: "var(--ff-display)" }}>Dossier Overview</div>
-      <div className="page-subtitle">
-        Submission readiness · Last updated: {lastUpdated}
-        <button className="btn-ghost btn-sm" style={{ marginLeft: 8 }} onClick={load}>Refresh</button>
-      </div>
-
-      {/* Score card — circle + status badge + action buttons */}
-      <div className="card">
-        <div className="score-card">
-          <div className={`score-circle ${tier}`}>
-            <div className="score-num">{displayScore.toFixed(1)}</div>
-            <div className="score-label">Grade {grade}</div>
+    <div className="page page--wide">
+      {/* Header: title + primary actions */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
+        <div>
+          <div className="page-title" style={{ marginBottom: 4 }}>Dossier Overview</div>
+          <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            Submission readiness · Last updated {lastUpdated || "—"}
           </div>
-          <div className="score-info">
-            <div className={`status-badge ${tier}`}>
-              {tier === "pass" ? "Submission Ready" : tier === "warn" ? "Needs Review" : "Not Ready"}
-            </div>
-            <div className="score-meta">
-              {total} links detected · {brokenLinks} broken · {unverified} unverified
-            </div>
-            <div className="btn-row" style={{ marginTop: 14 }}>
-              {onViewPipeline && (
-                <button className="btn-success btn-sm" onClick={onViewPipeline}>Run Pipeline</button>
-              )}
-              <button className="btn-primary btn-sm" onClick={onViewIssues}>
-                Issues {anomalies.length > 0 && `(${anomalies.length})`}
-              </button>
-              {onViewComparison && (
-                <button className="btn-ghost btn-sm" onClick={onViewComparison}>Compare Docs</button>
-              )}
-              {onViewDetectionTrace && (
-                <button className="btn-ghost btn-sm" onClick={onViewDetectionTrace}>Detection Trace</button>
-              )}
-              <button className="btn-ghost btn-sm" onClick={() => api.exportCsv(activeRunId)}>Export CSV</button>
-            </div>
-          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {onViewPipeline && (
+            <button className="btn-primary btn-sm" onClick={onViewPipeline}>Run Pipeline</button>
+          )}
+          <button className="btn-ghost btn-sm" onClick={() => api.exportCsv(activeRunId)}>Export CSV</button>
+          <button className="btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
         </div>
       </div>
 
-      {/* Stats row */}
-      <div className="stats-row">
-        <div className="stat-box">
-          <div className="stat-num neutral">{total}</div>
-          <div className="stat-label">Total Links</div>
-        </div>
-        <div className="stat-box">
-          <div className="stat-num ok">{okLinks}</div>
-          <div className="stat-label">OK</div>
-        </div>
-        <div className="stat-box">
-          <div className="stat-num block">{brokenLinks}</div>
-          <div className="stat-label">Broken</div>
-        </div>
-        <div className="stat-box">
-          <div className="stat-num warn">{suspicious}</div>
-          <div className="stat-label">Suspicious</div>
-        </div>
-        <div className="stat-box">
-          <div className="stat-num warn">{unverified}</div>
-          <div className="stat-label">Unverified</div>
+      {/* Hero: score + status + actions (left) · divider · metric grid (right) */}
+      <div className="card" style={{ marginBottom: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 28, flexWrap: "wrap" }}>
+          {/* Score panel */}
+          <div style={{ display: "flex", alignItems: "center", gap: 18, minWidth: 300 }}>
+            <div className={`score-circle ${tier}`}>
+              <div className="score-num">{displayScore.toFixed(1)}</div>
+              <div className="score-label">Grade {grade}</div>
+            </div>
+            <div>
+              <div className={`status-badge ${tier}`}>
+                {tier === "pass" ? "Submission Ready" : tier === "warn" ? "Needs Review" : "Not Ready"}
+              </div>
+              <div className="score-meta" style={{ marginBottom: 12 }}>
+                {anomalies.length === 0
+                  ? "No anomalies detected"
+                  : `${blockers} blocker${blockers === 1 ? "" : "s"} · ${warnings} warning${warnings === 1 ? "" : "s"}`}
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button className="btn-primary btn-sm" onClick={onViewIssues}>
+                  Issues {anomalies.length > 0 && `(${anomalies.length})`}
+                </button>
+                {onViewComparison && (
+                  <button className="btn-ghost btn-sm" onClick={onViewComparison}>Compare Docs</button>
+                )}
+                {onViewDetectionTrace && (
+                  <button className="btn-ghost btn-sm" onClick={onViewDetectionTrace}>Detection Trace</button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div style={{ width: 1, alignSelf: "stretch", minHeight: 96, background: "var(--border)" }} />
+
+          {/* Metric grid */}
+          <div style={{ flex: 1, minWidth: 260, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(92px, 1fr))", gap: 10 }}>
+            {[
+              { n: total,       l: "Total",      c: "var(--info)" },
+              { n: okLinks,     l: "OK",         c: "var(--success)" },
+              { n: brokenLinks, l: "Broken",     c: "var(--danger)" },
+              { n: suspicious,  l: "Suspicious", c: "var(--warning)" },
+              { n: unverified,  l: "Unverified", c: "var(--warning)" },
+            ].map((m) => (
+              <div key={m.l} style={{ textAlign: "center", padding: "8px 4px" }}>
+                <div style={{ fontFamily: "var(--ff-display)", fontSize: 28, fontWeight: 800, lineHeight: 1, color: m.c }}>{m.n}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".03em", marginTop: 5 }}>{m.l}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
