@@ -12,6 +12,19 @@
  */
 
 import { useEffect, useState } from "react";
+import {
+  IconPlayerPlay,
+  IconArrowsDiff,
+  IconClipboardCheck,
+  IconShieldCheck,
+  IconLayoutDashboard,
+  IconGridDots,
+  IconLink,
+  IconAlertTriangle,
+  IconFileExport,
+  IconScale,
+  IconSearch,
+} from "@tabler/icons-react";
 import { api } from "./api";
 import { Dashboard } from "./screens/Dashboard";
 import { Issues } from "./screens/Issues";
@@ -57,17 +70,19 @@ const REPORT_SCREENS: Screen[] = [
 
 // ── Navigation definition ─────────────────────────────────────────────────────
 
-interface NavItem { screen: Screen; label: string; }
+type TablerIcon = React.ComponentType<{ size?: number | string; stroke?: number | string }>;
+
+interface NavItem { screen: Screen; label: string; icon: TablerIcon }
 interface NavGroup { label: string; items: NavItem[]; }
 
 const NAV_GROUPS: NavGroup[] = [
   {
     label: "AI Pipeline",
     items: [
-      { screen: "pipeline", label: "Run Pipeline" },
-      { screen: "run-compare", label: "Run Compare" },
-      { screen: "review", label: "Review Queue" },
-      { screen: "compliance", label: "Compliance Gate" },
+      { screen: "pipeline", label: "Run Pipeline", icon: IconPlayerPlay },
+      { screen: "run-compare", label: "Run Compare", icon: IconArrowsDiff },
+      { screen: "review", label: "Review Queue", icon: IconClipboardCheck },
+      { screen: "compliance", label: "Compliance Gate", icon: IconShieldCheck },
     ],
   },
   // ── Reports + Analysis groups ────────────────────────────────────────────
@@ -80,18 +95,18 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Reports",
     items: [
-      { screen: "dashboard", label: "Overview" },
-      { screen: "module-matrix", label: "Module Matrix" },
-      { screen: "links-table", label: "Link Inspector" },
-      { screen: "issues", label: "Issues" },
-      { screen: "export", label: "Export" },
+      { screen: "dashboard", label: "Overview", icon: IconLayoutDashboard },
+      { screen: "module-matrix", label: "Module Matrix", icon: IconGridDots },
+      { screen: "links-table", label: "Link Inspector", icon: IconLink },
+      { screen: "issues", label: "Issues", icon: IconAlertTriangle },
+      { screen: "export", label: "Export", icon: IconFileExport },
     ],
   },
   {
     label: "Analysis",
     items: [
-      { screen: "comparison", label: "Comparison" },
-      { screen: "detection-trace", label: "Detection Trace" },
+      { screen: "comparison", label: "Comparison", icon: IconScale },
+      { screen: "detection-trace", label: "Detection Trace", icon: IconSearch },
     ],
   },
 ];
@@ -296,10 +311,15 @@ function AppShell() {
             style={{
               background: "none", border: "none", cursor: "pointer",
               color: "#e8e8e8", fontSize: 18, padding: "0 4px", marginRight: 4,
+              display: "inline-flex", alignItems: "center",
             }}
             title="Toggle sidebar"
           >
-            ☰
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
           </button>
 
           <span
@@ -344,7 +364,7 @@ function AppShell() {
           {/* ── Sidebar ── */}
           {navOpen && (
             <nav style={{
-              width: 190, flexShrink: 0,
+              width: 200, flexShrink: 0,
               background: "var(--surface)",
               borderRight: "1px solid var(--border)",
               overflowY: "auto",
@@ -362,6 +382,7 @@ function AppShell() {
                   </div>
                   {grp.items.map((item) => {
                     const isActive = screen === item.screen;
+                    const Icon = item.icon;
                     return (
                       <button
                         key={item.screen}
@@ -372,12 +393,14 @@ function AppShell() {
                           border: "none", cursor: "pointer", textAlign: "left",
                           fontSize: 13,
                           fontWeight: isActive ? 600 : 400,
-                          background: isActive ? "rgba(59,130,246,0.08)" : "transparent",
+                          background: isActive ? "var(--brand-tint)" : "transparent",
                           color: isActive ? "var(--primary)" : "var(--text)",
                           borderLeft: isActive ? "3px solid var(--primary)" : "3px solid transparent",
                           transition: "all 0.1s",
+                          gap: 10,
                         }}
                       >
+                        <Icon size={16} stroke={isActive ? 2 : 1.6} />
                         <span style={{ flex: 1 }}>{item.label}</span>
                         {item.screen === "review" && reviewCount > 0 && (
                           <span style={{

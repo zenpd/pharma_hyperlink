@@ -367,10 +367,16 @@ def _scan_pdf_captions(index: dict[str, dict[str, Any]], source_path: str | Path
                 if block.get("type", 0) != 0:  # keep text blocks only
                     continue
                 for line in block.get("lines", []):
-                    spans = [s for s in line.get("spans", []) if s.get("text", "").strip()]
+                    line_spans = line.get("spans", [])
+                    spans = [s for s in line_spans if s.get("text", "").strip()]
                     if not spans:
                         continue
-                    text = "".join(s.get("text", "") for s in spans).strip()
+                    # Join ALL spans (incl. whitespace-only) so a per-word OCR text
+                    # layer keeps its inter-word spaces. Filtering first then
+                    # join("") collapsed "Appendix A" -> "AppendixA" and broke the
+                    # caption match on scanned/OCR'd PDFs; native phrase-spans are
+                    # unchanged. Font/bold stats below still use non-empty ``spans``.
+                    text = "".join(s.get("text", "") for s in line_spans).strip()
                     bold = any(int(s.get("flags", 0)) & 16 for s in spans)
                     max_size = max(round(float(s.get("size", 0.0)), 1) for s in spans)
                     for s in spans:
@@ -487,10 +493,12 @@ def _scan_pdf_section_headings(index: dict[str, dict[str, Any]], source_path: st
                     continue
                 blk_lines = block.get("lines", [])
                 for line in blk_lines:
-                    spans = [s for s in line.get("spans", []) if s.get("text", "").strip()]
+                    line_spans = line.get("spans", [])
+                    spans = [s for s in line_spans if s.get("text", "").strip()]
                     if not spans:
                         continue
-                    text = "".join(s.get("text", "") for s in spans).strip()
+                    # All spans -> preserve per-word OCR spacing (see _scan_pdf_captions).
+                    text = "".join(s.get("text", "") for s in line_spans).strip()
                     max_size = max(round(float(s.get("size", 0.0)), 1) for s in spans)
                     for s in spans:
                         sizes[round(float(s.get("size", 0.0)), 1)] += len(s.get("text", ""))
@@ -634,10 +642,12 @@ def _add_pdf_references(index: dict[str, dict[str, Any]], source_path: str | Pat
                 if block.get("type", 0) != 0:
                     continue
                 for line in block.get("lines", []):
-                    spans = [s for s in line.get("spans", []) if s.get("text", "").strip()]
+                    line_spans = line.get("spans", [])
+                    spans = [s for s in line_spans if s.get("text", "").strip()]
                     if not spans:
                         continue
-                    text = "".join(s.get("text", "") for s in spans).strip()
+                    # All spans -> preserve per-word OCR spacing (see _scan_pdf_captions).
+                    text = "".join(s.get("text", "") for s in line_spans).strip()
                     # Capture the line bbox so a citation link can land ON the entry
                     # line (pinpoint scroll), not just the top of the References page.
                     bb = line.get("bbox") or spans[0].get("bbox")

@@ -8,6 +8,9 @@
     "preview": "vite preview --port 5174"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@fontsource/plus-jakarta-sans": "^5.2.8",
+    "@tabler/icons-react": "^3.44.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "supertokens-auth-react": "^0.48.0"

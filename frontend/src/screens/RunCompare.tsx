@@ -243,7 +243,7 @@ export function RunCompare({ onBack, active = true, initialRunId, initialDoc, on
   return (
     <div className="page" style={{ maxWidth: 1400 }}>
       <button className="back-btn" onClick={onBack}>← Back to Pipeline</button>
-      <div className="page-title">Run Compare</div>
+      <div className="page-title" style={{ fontFamily: "var(--ff-display)" }}>Run Compare</div>
       <div className="page-subtitle">
         Before &amp; after for documents uploaded and processed through the pipeline.
       </div>

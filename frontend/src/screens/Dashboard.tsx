@@ -104,7 +104,7 @@ export function Dashboard({ onViewIssues, onViewComparison, onViewDetectionTrace
 
   return (
     <div className="page">
-      <div className="page-title">Dossier Overview</div>
+      <div className="page-title" style={{ fontFamily: "var(--ff-display)" }}>Dossier Overview</div>
       <div className="page-subtitle">
         Submission readiness · Last updated: {lastUpdated}
         <button className="btn-ghost btn-sm" style={{ marginLeft: 8 }} onClick={load}>Refresh</button>

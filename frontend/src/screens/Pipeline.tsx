@@ -433,7 +433,7 @@ export function Pipeline({ onBack, onGoToReview, onCompareDoc }: Props) {
   return (
     <div className="page page--wide">
       <button className="back-btn" onClick={onBack}>← Back to Dashboard</button>
-      <div className="page-title">🚀 Pipeline Run</div>
+      <div className="page-title" style={{ fontFamily: "var(--ff-display)" }}>🚀 Pipeline Run</div>
       <div className="page-subtitle">
         Upload dossier documents · AI detects & injects hyperlinks · live progress
       </div>
@@ -573,12 +573,13 @@ export function Pipeline({ onBack, onGoToReview, onCompareDoc }: Props) {
             onDrop={(e) => { e.preventDefault(); setDragging(false); void onDrop(e.dataTransfer); }}
             onClick={() => fileInputRef.current?.click()}
             style={{
-              border: `2px dashed ${dragging ? "var(--brand)" : "var(--border-color)"}`,
-              borderRadius: 10,
+              border: `2px dashed ${dragging ? "var(--primary)" : "var(--border)"}`,
+              borderRadius: "var(--radius)",
               padding: "32px 20px",
               textAlign: "center",
               cursor: "pointer",
-              background: dragging ? "rgba(99,102,241,0.06)" : "transparent",
+              background: dragging ? "var(--brand-tint-2)" : "var(--primary-bg)",
+              boxShadow: dragging ? "0 0 0 3px rgba(31,78,140,.12)" : "none",
               transition: "all 0.15s",
             }}
           >
@@ -664,22 +665,42 @@ export function Pipeline({ onBack, onGoToReview, onCompareDoc }: Props) {
             </div>
           )}
 
+          {/* "Use demo dossier" hidden per request — it only logged a hint, not wired to load files.
           {files.length === 0 && (
             <div className="btn-row" style={{ marginTop: 16, justifyContent: "flex-end" }}>
               <button className="btn-ghost btn-sm" onClick={() => {
-                // Load demo dossier files hint
                 addLog("Tip: upload files from data/synthetic/demo_dossier/m5/53-clin-stud-rep/");
               }}>
                 💡 Use demo dossier
               </button>
             </div>
           )}
+          */}
         </div>
       )}
 
       {/* ── Live stepper (running / done / error / cancelled) ── */}
       {(pageState === "running" || pageState === "done" || pageState === "error" || pageState === "cancelled") && (
         <>
+          {/* Action toolbar above the run-summary card: New Run (left) · Send to Review (right) */}
+          {(pageState === "done" || pageState === "error" || pageState === "cancelled") && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+              <button
+                className="btn-sm"
+                onClick={handleReset}
+                style={{ background: "#1e40af", color: "#fff", fontWeight: 600, borderRadius: "var(--radius)" }}
+                title="Start a new run"
+              >
+                ↩ New Run
+              </button>
+              {pageState === "done" && (
+                <button className="btn-primary btn-sm" style={{ marginLeft: "auto" }} onClick={onGoToReview}>
+                  → Send to Review Queue
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Run metadata */}
           <div className="card" style={{ padding: "12px 20px", display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap" }}>
             <div>
@@ -866,12 +887,6 @@ export function Pipeline({ onBack, onGoToReview, onCompareDoc }: Props) {
                 <button className="btn-success" onClick={() => api.pipeline.downloadCsv(runId!)}>
                   ⬇ Download Report CSV
                 </button>
-                <button className="btn-primary" onClick={onGoToReview}>
-                  → Send to Review Queue
-                </button>
-                <button className="btn-ghost" onClick={handleReset}>
-                  ↩ New Run
-                </button>
               </div>
             </div>
           )}
@@ -920,11 +935,11 @@ export function Pipeline({ onBack, onGoToReview, onCompareDoc }: Props) {
               style={{
                 maxHeight: 180, overflowY: "auto", fontFamily: "monospace",
                 fontSize: 11, lineHeight: 1.6, padding: "8px 14px",
-                background: "var(--surface-sunken, rgba(0,0,0,0.02))",
+                background: "var(--info-bg)",
               }}
             >
               {logLines.map((l, i) => (
-                <div key={i} style={{ color: l.includes("ERROR") ? "var(--danger)" : "var(--text-muted)" }}>
+                <div key={i} style={{ color: l.includes("ERROR") ? "var(--danger)" : l.includes("WARN") ? "var(--warning)" : "var(--text-muted)" }}>
                   {l}
                 </div>
               ))}

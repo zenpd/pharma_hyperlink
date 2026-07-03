@@ -93,7 +93,7 @@ pipeline = ["celery", "redis"]
 graph = ["neo4j"]
 auth = ["supertokens-python"]
 references = ["gliner"]
-ocr = ["ocrmypdf"]
+ocr = ["ocrmypdf","pytesseract"]
 all = [
     "ollama",
     "sentence-transformers",
