@@ -3,20 +3,20 @@
  *
  * Hierarchy: Dossier (run) → Documents → cross-doc Hyperlinks
  *
- * Layout
+ * Layout:
  *  • One large "Dossier" root node fixed at centre
- *  • Document nodes on a ring around it (d3.forceRadial)
- *  • Cross-doc links drawn as curved arcs between doc nodes
- *  • Thin grey spokes connect each doc back to the dossier root
+ *  • Document nodes on a radial ring (d3.forceRadial)
+ *  • Dashed grey spokes = membership (dossier → doc)
+ *  • Curved coloured arcs = cross-doc hyperlinks (doc → doc)
  *
- * Interactions
- *  • Scroll/pinch → zoom   |   drag canvas → pan  (d3.zoom)
- *  • Drag individual nodes → pin/unpin
- *  • Click a doc node → navigate to Run Compare for that doc
- *  • Hover node/edge → tooltip
+ * Interactions:
+ *  • Scroll → zoom  |  drag canvas → pan
+ *  • Drag individual node → pin / release
+ *  • Click doc node → navigate to Run Compare  (click ≠ drag: guarded by event.defaultPrevented)
+ *  • Hover → tooltip
  */
 
-import { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import * as d3 from "d3";
 import { api } from "../api";
 import type { RunGraph, GraphNode, GraphEdge } from "../types";
@@ -44,7 +44,7 @@ const DOC_COLOR: Record<string, string> = {
 };
 const DOSSIER_COLOR = "#a78bfa";
 
-// ── D3 simulation types ───────────────────────────────────────────────────────
+// ── simulation types ─────────────────────────────────────────────────────────
 
 interface SimNode extends d3.SimulationNodeDatum {
   id: string;
@@ -53,18 +53,9 @@ interface SimNode extends d3.SimulationNodeDatum {
   docType?: "pdf" | "docx";
   link_count: number;
 }
-
 interface SimLink extends d3.SimulationLinkDatum<SimNode> {
   kind: "spoke" | "cross";
   edge?: GraphEdge;
-}
-
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-function shortName(id: string) {
-  return id
-    .replace(/_linked\.(docx|pdf)$/i, "")
-    .replace(/\.(docx|pdf)$/i, "");
 }
 
 // ── component ────────────────────────────────────────────────────────────────
@@ -75,31 +66,13 @@ export function DossierGraph({ onBack, onGoToCompare }: Props) {
   const [graph, setGraph]     = useState<RunGraph | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
-
   const [tooltip, setTooltip] = useState<{ x: number; y: number; html: string } | null>(null);
-  const [dims, setDims]       = useState({ w: 900, h: 620 });
 
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef       = useRef<SVGSVGElement>(null);
   const simRef       = useRef<d3.Simulation<SimNode, SimLink> | null>(null);
 
-  // Measure container after layout
-  useLayoutEffect(() => {
-    function measure() {
-      if (containerRef.current) {
-        const r = containerRef.current.getBoundingClientRect();
-        if (r.width > 100 && r.height > 100) {
-          setDims({ w: r.width, h: r.height });
-        }
-      }
-    }
-    measure();
-    const obs = new ResizeObserver(measure);
-    if (containerRef.current) obs.observe(containerRef.current);
-    return () => obs.disconnect();
-  }, []);
-
-  // Load run list once
+  // ── load run list ─────────────────────────────────────────────────────────
   useEffect(() => {
     api.pipeline.listRuns()
       .then((data) => {
@@ -108,10 +81,11 @@ export function DossierGraph({ onBack, onGoToCompare }: Props) {
           .sort((a, b) => b.run_id.localeCompare(a.run_id));
         setRuns(done);
         if (done.length > 0) setRunId(done[0].run_id);
-      }).catch(() => {});
+      })
+      .catch(() => {});
   }, []);
 
-  // Load graph when run selection changes
+  // ── load graph when run changes ───────────────────────────────────────────
   useEffect(() => {
     if (!runId) return;
     setLoading(true);
@@ -125,45 +99,46 @@ export function DossierGraph({ onBack, onGoToCompare }: Props) {
       });
   }, [runId]);
 
-  // Build / rebuild D3 scene
+  // ── build D3 scene ────────────────────────────────────────────────────────
+  // Dimensions are read directly from the container element at build time —
+  // NOT stored in state — so the ResizeObserver never triggers a rebuild loop.
   const buildGraph = useCallback(() => {
-    if (!graph || !svgRef.current) return;
+    if (!graph || !svgRef.current || !containerRef.current) return;
 
     simRef.current?.stop();
-    simRef.current = null;
 
-    const { w, h } = dims;
+    // Measure container AFTER layout (useEffect runs post-paint)
+    const rect = containerRef.current.getBoundingClientRect();
+    const w = Math.max(rect.width,  400);
+    const h = Math.max(rect.height, 400);
     const cx = w / 2;
     const cy = h / 2;
 
     const svg = d3.select(svgRef.current);
     svg.selectAll("*").remove();
+    svg.attr("width", w).attr("height", h);
 
-    // ── Arrow markers ─────────────────────────────────────────────────────
+    // Arrow markers
     const defs = svg.append("defs");
     Object.entries(STATUS_COLOR).forEach(([status, color]) => {
       defs.append("marker")
         .attr("id", `arr-${status}`)
         .attr("viewBox", "0 -5 10 10")
-        .attr("refX", 24)
-        .attr("refY", 0)
-        .attr("markerWidth", 5)
-        .attr("markerHeight", 5)
+        .attr("refX", 24).attr("refY", 0)
+        .attr("markerWidth", 5).attr("markerHeight", 5)
         .attr("orient", "auto")
-        .append("path")
-        .attr("fill", color)
-        .attr("d", "M0,-5L10,0L0,5");
+        .append("path").attr("fill", color).attr("d", "M0,-5L10,0L0,5");
     });
 
-    // Soft glow filter for dossier node
+    // Glow filter for root
     const filter = defs.append("filter").attr("id", "glow");
-    filter.append("feGaussianBlur").attr("stdDeviation", "6").attr("result", "blur");
+    filter.append("feGaussianBlur").attr("stdDeviation", "7").attr("result", "blur");
     const merge = filter.append("feMerge");
     merge.append("feMergeNode").attr("in", "blur");
     merge.append("feMergeNode").attr("in", "SourceGraphic");
 
-    // ── Zoom / pan ────────────────────────────────────────────────────────
-    const zoomG = svg.append("g");
+    // Zoom / pan (attached to SVG)
+    const zoomG = svg.append("g").attr("class", "zoom-layer");
     svg.call(
       d3.zoom<SVGSVGElement, unknown>()
         .scaleExtent([0.1, 8])
@@ -174,19 +149,15 @@ export function DossierGraph({ onBack, onGoToCompare }: Props) {
     const maxLinks = Math.max(1, ...graph.nodes.map((n) => n.link_count));
     const nodeR    = d3.scaleSqrt().domain([0, maxLinks]).range([16, 44]);
 
-    // Root dossier node (fixed at centre)
     const dossierNode: SimNode = {
-      id: "__dossier__",
-      kind: "dossier",
+      id: "__dossier__", kind: "dossier",
       label: runId ?? "Dossier",
       link_count: graph.stats.total_links,
-      fx: cx,
-      fy: cy,
+      fx: cx, fy: cy,
     };
 
     const docNodes: SimNode[] = graph.nodes.map((n: GraphNode) => ({
-      id: n.id,
-      kind: "doc",
+      id: n.id, kind: "doc",
       label: n.label,
       docType: n.type as "pdf" | "docx",
       link_count: n.link_count,
@@ -195,14 +166,10 @@ export function DossierGraph({ onBack, onGoToCompare }: Props) {
     const allNodes: SimNode[] = [dossierNode, ...docNodes];
     const nodeById = new Map(allNodes.map((n) => [n.id, n]));
 
-    // Spokes: dossier → every doc
     const spokeLinks: SimLink[] = docNodes.map((d) => ({
-      source: dossierNode,
-      target: d,
-      kind: "spoke",
+      source: dossierNode, target: d, kind: "spoke",
     }));
 
-    // Cross-doc edges
     const crossLinks: SimLink[] = graph.edges
       .map((e: GraphEdge) => {
         const src = nodeById.get(e.source);
@@ -214,87 +181,79 @@ export function DossierGraph({ onBack, onGoToCompare }: Props) {
 
     const allLinks: SimLink[] = [...spokeLinks, ...crossLinks];
 
-    // Radial ring radius — scales with doc count
-    const ringR = Math.min(cx, cy) * 0.72 * (1 + Math.log2(Math.max(1, docNodes.length)) * 0.07);
+    const ringR = Math.min(cx, cy) * 0.68 * (1 + Math.log2(Math.max(2, docNodes.length)) * 0.06);
 
     // ── Simulation ────────────────────────────────────────────────────────
     simRef.current = d3.forceSimulation<SimNode>(allNodes)
       .force("link", d3.forceLink<SimNode, SimLink>(allLinks)
         .id((d) => d.id)
-        .distance((l) => l.kind === "spoke" ? ringR : ringR * 0.9)
-        .strength((l) => l.kind === "spoke" ? 1 : 0.2))
-      .force("charge",  d3.forceManyBody<SimNode>().strength((d) => d.kind === "dossier" ? -800 : -350))
-      .force("radial",  d3.forceRadial<SimNode>(ringR, cx, cy).strength((d) => d.kind === "doc" ? 0.85 : 0))
-      .force("collide", d3.forceCollide<SimNode>().radius((d) => (d.kind === "dossier" ? 52 : nodeR(d.link_count)) + 14))
-      .alphaDecay(0.025);
+        .distance((l) => l.kind === "spoke" ? ringR : ringR * 0.85)
+        .strength((l) => l.kind === "spoke" ? 1 : 0.18))
+      .force("charge",  d3.forceManyBody<SimNode>()
+        .strength((d) => d.kind === "dossier" ? -900 : -380))
+      .force("radial",  d3.forceRadial<SimNode>(ringR, cx, cy)
+        .strength((d) => d.kind === "doc" ? 0.9 : 0))
+      .force("collide", d3.forceCollide<SimNode>()
+        .radius((d) => (d.kind === "dossier" ? 50 : nodeR(d.link_count)) + 12))
+      .alphaDecay(0.022);
 
-    // ── Draw spoke edges (behind everything) ─────────────────────────────
-    const spokeG = zoomG.append("g");
+    // ── Spokes (below everything) ─────────────────────────────────────────
+    const spokeG  = zoomG.append("g");
     const spokeSel = spokeG.selectAll("line")
       .data(spokeLinks)
-      .enter()
-      .append("line")
-      .attr("stroke", "#334155")
+      .enter().append("line")
+      .attr("stroke", "#2d3f55")
       .attr("stroke-width", 1)
-      .attr("stroke-dasharray", "3,4")
-      .attr("stroke-opacity", 0.55)
+      .attr("stroke-dasharray", "3,5")
       .attr("pointer-events", "none");
 
-    // ── Draw cross-doc edges ──────────────────────────────────────────────
+    // ── Cross-doc edges ───────────────────────────────────────────────────
     const edgeWidth = d3.scaleLinear()
       .domain([1, Math.max(1, d3.max(graph.edges, (e: GraphEdge) => e.count) ?? 1)])
-      .range([1.5, 5])
-      .clamp(true);
+      .range([1.5, 5]).clamp(true);
 
-    const crossG = zoomG.append("g");
+    const crossG  = zoomG.append("g");
     const crossSel = crossG.selectAll("path")
       .data(crossLinks)
-      .enter()
-      .append("path")
+      .enter().append("path")
       .attr("fill", "none")
-      .attr("stroke", (d) => STATUS_COLOR[(d.edge?.status) ?? "unverified"])
-      .attr("stroke-width", (d) => edgeWidth(d.edge?.count ?? 1))
-      .attr("stroke-dasharray", (d) => DETECTION_DASH[d.edge?.detected_by ?? "regex"] ?? "none")
-      .attr("stroke-opacity", 0.8)
-      .attr("marker-end", (d) => `url(#arr-${d.edge?.status ?? "unverified"})`)
+      .attr("stroke",          (d) => STATUS_COLOR[d.edge?.status ?? "unverified"])
+      .attr("stroke-width",    (d) => edgeWidth(d.edge?.count ?? 1))
+      .attr("stroke-dasharray",(d) => DETECTION_DASH[d.edge?.detected_by ?? "regex"] ?? "none")
+      .attr("stroke-opacity", 0.82)
+      .attr("marker-end",      (d) => `url(#arr-${d.edge?.status ?? "unverified"})`)
       .style("cursor", "crosshair")
       .on("mouseenter", (ev: MouseEvent, d) => {
         const e = d.edge!;
         const src = (d.source as SimNode).label;
         const tgt = (d.target as SimNode).label;
         const byMethod = Object.entries(e.detected_by_counts)
-          .map(([m, c]) => `<span style="color:#94a3b8">${m}</span> ${c}`)
-          .join(" · ");
+          .map(([m, c]) => `<span style="color:#94a3b8">${m}</span> ${c}`).join(" · ");
         setTooltip({
-          x: ev.clientX + 14,
-          y: ev.clientY - 10,
+          x: ev.clientX + 14, y: ev.clientY - 12,
           html: `<b>${src} → ${tgt}</b><br>${e.count} link${e.count !== 1 ? "s" : ""}
                  &nbsp;·&nbsp;<span style="color:${STATUS_COLOR[e.status]}">${e.status}</span><br>
-                 <span style="font-size:11px">${byMethod}</span>`,
+                 <small>${byMethod}</small>`,
         });
       })
       .on("mousemove", (ev: MouseEvent) =>
-        setTooltip((t) => t ? { ...t, x: ev.clientX + 14, y: ev.clientY - 10 } : null))
+        setTooltip((t) => t ? { ...t, x: ev.clientX + 14, y: ev.clientY - 12 } : null))
       .on("mouseleave", () => setTooltip(null));
 
-    // Edge count labels (only when ≥ 2)
-    const edgeLabelG = zoomG.append("g");
+    // Edge count badge
+    const edgeLabelG  = zoomG.append("g");
     const edgeLabelSel = edgeLabelG.selectAll("text")
       .data(crossLinks.filter((l) => (l.edge?.count ?? 0) >= 2))
-      .enter()
-      .append("text")
-      .attr("fill", "#94a3b8")
-      .attr("font-size", 10)
-      .attr("text-anchor", "middle")
-      .attr("pointer-events", "none")
+      .enter().append("text")
+      .attr("fill", "#94a3b8").attr("font-size", 10)
+      .attr("text-anchor", "middle").attr("pointer-events", "none")
       .text((d) => String(d.edge?.count ?? ""));
 
-    // ── Draw doc nodes ────────────────────────────────────────────────────
-    const docG = zoomG.append("g");
+    // ── Doc nodes ─────────────────────────────────────────────────────────
+    const docG  = zoomG.append("g");
     const docSel = docG.selectAll<SVGGElement, SimNode>("g")
       .data(docNodes)
-      .enter()
-      .append("g")
+      .enter().append("g")
       .style("cursor", "pointer")
       .call(
         d3.drag<SVGGElement, SimNode>()
@@ -302,26 +261,29 @@ export function DossierGraph({ onBack, onGoToCompare }: Props) {
             if (!ev.active) simRef.current?.alphaTarget(0.3).restart();
             d.fx = d.x; d.fy = d.y;
           })
-          .on("drag", (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
-          .on("end",  (ev, d) => {
+          .on("drag",  (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
+          .on("end",   (ev, d) => {
             if (!ev.active) simRef.current?.alphaTarget(0);
             d.fx = null; d.fy = null;
           }),
       )
-      .on("click", (_ev, d) => {
+      // Guard: d3.drag calls event.preventDefault() on mousedown, which sets
+      // event.defaultPrevented on the subsequent click — use that to distinguish
+      // a real click from the end of a drag gesture.
+      .on("click", (ev: MouseEvent, d) => {
+        if (ev.defaultPrevented) return;
         if (onGoToCompare && runId) onGoToCompare(runId, d.id);
       })
       .on("mouseenter", (ev: MouseEvent, d) => {
         setTooltip({
-          x: ev.clientX + 14,
-          y: ev.clientY - 10,
+          x: ev.clientX + 14, y: ev.clientY - 12,
           html: `<b>${d.label}</b><br>${(d.docType ?? "").toUpperCase()}
                  &nbsp;·&nbsp;${d.link_count} outbound link${d.link_count !== 1 ? "s" : ""}
-                 ${onGoToCompare ? "<br><span style='color:#818cf8;font-size:11px'>Click to open in Run Compare</span>" : ""}`,
+                 ${onGoToCompare ? "<br><small style='color:#818cf8'>Click → open in Run Compare</small>" : ""}`,
         });
       })
       .on("mousemove", (ev: MouseEvent) =>
-        setTooltip((t) => t ? { ...t, x: ev.clientX + 14, y: ev.clientY - 10 } : null))
+        setTooltip((t) => t ? { ...t, x: ev.clientX + 14, y: ev.clientY - 12 } : null))
       .on("mouseleave", () => setTooltip(null));
 
     // Glow ring
@@ -329,105 +291,78 @@ export function DossierGraph({ onBack, onGoToCompare }: Props) {
       .attr("r", (d) => nodeR(d.link_count) + 7)
       .attr("fill", "none")
       .attr("stroke", (d) => DOC_COLOR[d.docType ?? "pdf"])
-      .attr("stroke-width", 1)
-      .attr("stroke-opacity", 0.3);
+      .attr("stroke-width", 1).attr("stroke-opacity", 0.28);
 
     // Body
     docSel.append("circle")
       .attr("r", (d) => nodeR(d.link_count))
       .attr("fill", (d) => DOC_COLOR[d.docType ?? "pdf"])
-      .attr("fill-opacity", 0.9)
-      .attr("stroke", "#0f172a")
-      .attr("stroke-width", 1.5);
+      .attr("fill-opacity", 0.92)
+      .attr("stroke", "#0a1628").attr("stroke-width", 1.5);
 
-    // Link count text
+    // Link count
     docSel.append("text")
-      .attr("text-anchor", "middle")
-      .attr("dominant-baseline", "middle")
+      .attr("text-anchor", "middle").attr("dominant-baseline", "middle")
       .attr("fill", "#fff")
       .attr("font-size", (d) => Math.max(10, nodeR(d.link_count) * 0.45))
-      .attr("font-weight", "700")
-      .attr("pointer-events", "none")
-      .text((d) => d.link_count > 0 ? d.link_count : "");
+      .attr("font-weight", "700").attr("pointer-events", "none")
+      .text((d) => d.link_count > 0 ? String(d.link_count) : "");
 
-    // Doc name label
+    // Label below
     docSel.append("text")
       .attr("text-anchor", "middle")
       .attr("dy", (d) => nodeR(d.link_count) + 15)
-      .attr("fill", "#cbd5e1")
-      .attr("font-size", 11)
-      .attr("font-weight", "500")
+      .attr("fill", "#cbd5e1").attr("font-size", 11).attr("font-weight", "500")
       .attr("pointer-events", "none")
       .text((d) => d.label.length > 20 ? d.label.slice(0, 18) + "…" : d.label);
 
-    // ── Draw dossier root node (on top) ───────────────────────────────────
+    // ── Dossier root node (topmost layer) ────────────────────────────────
     const rootG = zoomG.append("g");
-    const rootNode = rootG.append("g")
-      .datum(dossierNode)
-      .style("cursor", "default");
+    const rootSel = rootG.append("g").style("cursor", "default");
 
-    // Animated pulse rings
     for (let i = 0; i < 3; i++) {
-      rootNode.append("circle")
-        .attr("r", 50 + i * 14)
+      rootSel.append("circle")
+        .attr("cx", cx).attr("cy", cy)
+        .attr("r", 50 + i * 15)
         .attr("fill", "none")
         .attr("stroke", DOSSIER_COLOR)
         .attr("stroke-width", 1)
-        .attr("stroke-opacity", 0.12 - i * 0.03);
+        .attr("stroke-opacity", 0.1 - i * 0.025);
     }
-
-    rootNode.append("circle")
-      .attr("r", 48)
-      .attr("fill", DOSSIER_COLOR)
-      .attr("fill-opacity", 0.18)
-      .attr("stroke", DOSSIER_COLOR)
-      .attr("stroke-width", 2)
+    rootSel.append("circle")
+      .attr("cx", cx).attr("cy", cy).attr("r", 46)
+      .attr("fill", DOSSIER_COLOR).attr("fill-opacity", 0.18)
+      .attr("stroke", DOSSIER_COLOR).attr("stroke-width", 2)
       .attr("filter", "url(#glow)");
-
-    rootNode.append("circle")
-      .attr("r", 34)
-      .attr("fill", DOSSIER_COLOR)
-      .attr("fill-opacity", 0.95)
-      .attr("stroke", "#0f172a")
-      .attr("stroke-width", 2);
-
-    // Dossier icon SVG (link icon)
-    rootNode.append("text")
-      .attr("text-anchor", "middle")
-      .attr("dominant-baseline", "middle")
-      .attr("font-size", 18)
-      .attr("fill", "#fff")
-      .attr("pointer-events", "none")
+    rootSel.append("circle")
+      .attr("cx", cx).attr("cy", cy).attr("r", 33)
+      .attr("fill", DOSSIER_COLOR).attr("fill-opacity", 0.95)
+      .attr("stroke", "#0a1628").attr("stroke-width", 2);
+    rootSel.append("text")
+      .attr("x", cx).attr("y", cy)
+      .attr("text-anchor", "middle").attr("dominant-baseline", "middle")
+      .attr("font-size", 18).attr("fill", "#fff").attr("pointer-events", "none")
       .text("⛓");
-
-    rootNode.append("text")
-      .attr("text-anchor", "middle")
-      .attr("dy", 52)
-      .attr("fill", "#c4b5fd")
-      .attr("font-size", 12)
-      .attr("font-weight", "600")
-      .attr("pointer-events", "none")
+    rootSel.append("text")
+      .attr("x", cx).attr("y", cy + 50)
+      .attr("text-anchor", "middle").attr("fill", "#c4b5fd")
+      .attr("font-size", 12).attr("font-weight", "600").attr("pointer-events", "none")
       .text("Dossier");
-
-    rootNode.append("text")
-      .attr("text-anchor", "middle")
-      .attr("dy", 66)
-      .attr("fill", "#7c3aed")
-      .attr("font-size", 10)
-      .attr("pointer-events", "none")
+    rootSel.append("text")
+      .attr("x", cx).attr("y", cy + 64)
+      .attr("text-anchor", "middle").attr("fill", "#7c3aed")
+      .attr("font-size", 10).attr("pointer-events", "none")
       .text(`${graph.stats.doc_count} docs · ${graph.stats.total_links} links`);
 
-    rootNode
-      .on("mouseenter", (ev: MouseEvent) => {
+    rootSel
+      .on("mouseenter", (ev: MouseEvent) =>
         setTooltip({
-          x: ev.clientX + 14,
-          y: ev.clientY - 10,
-          html: `<b>Dossier / Run</b><br>${runId}<br>
+          x: ev.clientX + 14, y: ev.clientY - 12,
+          html: `<b>Dossier / Run</b><br><span style="color:#94a3b8">${runId}</span><br>
                  ${graph.stats.doc_count} documents · ${graph.stats.total_links} links · ${graph.stats.edge_count} connections`,
-        });
-      })
+        }))
       .on("mousemove", (ev: MouseEvent) =>
-        setTooltip((t) => t ? { ...t, x: ev.clientX + 14, y: ev.clientY - 10 } : null))
+        setTooltip((t) => t ? { ...t, x: ev.clientX + 14, y: ev.clientY - 12 } : null))
       .on("mouseleave", () => setTooltip(null));
 
     // ── Tick ──────────────────────────────────────────────────────────────
@@ -444,44 +379,49 @@ export function DossierGraph({ onBack, onGoToCompare }: Props) {
         const dx = (t.x ?? 0) - (s.x ?? 0);
         const dy = (t.y ?? 0) - (s.y ?? 0);
         const dr = Math.sqrt(dx * dx + dy * dy) * 1.3;
-        return `M${s.x},${s.y} A${dr},${dr} 0 0,1 ${t.x},${t.y}`;
+        return `M${s.x ?? 0},${s.y ?? 0} A${dr},${dr} 0 0,1 ${t.x ?? 0},${t.y ?? 0}`;
       });
 
       edgeLabelSel
-        .attr("x", (d) => {
-          const s = d.source as SimNode;
-          const t = d.target as SimNode;
-          return ((s.x ?? 0) + (t.x ?? 0)) / 2;
-        })
-        .attr("y", (d) => {
-          const s = d.source as SimNode;
-          const t = d.target as SimNode;
-          return ((s.y ?? 0) + (t.y ?? 0)) / 2 - 8;
-        });
+        .attr("x", (d) => (((d.source as SimNode).x ?? 0) + ((d.target as SimNode).x ?? 0)) / 2)
+        .attr("y", (d) => (((d.source as SimNode).y ?? 0) + ((d.target as SimNode).y ?? 0)) / 2 - 8);
 
       docSel.attr("transform", (d) => `translate(${d.x ?? 0},${d.y ?? 0})`);
-
-      // Dossier root stays at centre (fx/fy), but keep the DOM node there
-      rootNode.attr("transform", `translate(${cx},${cy})`);
     });
 
     return () => { simRef.current?.stop(); };
-  }, [graph, dims, runId, onGoToCompare]);
+  }, [graph, runId, onGoToCompare]); // NO dims dependency — breaks the resize loop
 
   useEffect(() => {
     const cleanup = buildGraph();
     return cleanup;
   }, [buildGraph]);
 
-  const isEmpty  = graph && graph.nodes.length === 0;
-  const noEdges  = graph && graph.edges.length === 0 && graph.nodes.length > 0;
-  const showSVG  = !loading && !error && graph && !isEmpty;
+  // On container resize: update simulation centre + reheat — no full rebuild
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const obs = new ResizeObserver(() => {
+      if (!simRef.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const cx = rect.width / 2;
+      const cy = rect.height / 2;
+      (simRef.current.force("radial") as d3.ForceRadial<SimNode> | null)
+        ?.x(cx).y(cy);
+      (simRef.current.force("center") as d3.ForceCenter<SimNode> | null)
+        ?.x(cx).y(cy);
+      simRef.current.alpha(0.25).restart();
+    });
+    obs.observe(containerRef.current);
+    return () => obs.disconnect();
+  }, []); // runs once; sim ref is mutable
+
+  const isEmpty = graph && graph.nodes.length === 0;
+  const noEdges = graph && graph.edges.length === 0 && graph.nodes.length > 0;
+  const showSVG = !loading && !error && graph && !isEmpty;
 
   return (
-    <div
-      className="page"
-      style={{ maxWidth: "none", height: "100%", display: "flex", flexDirection: "column", padding: 0 }}
-    >
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+
       {/* ── Header ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 24px 0", flexShrink: 0 }}>
         <button className="back-btn" onClick={onBack} style={{ marginBottom: 0 }}>← Back</button>
@@ -498,7 +438,7 @@ export function DossierGraph({ onBack, onGoToCompare }: Props) {
       {/* ── Controls bar ── */}
       <div style={{
         display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
-        padding: "10px 24px 10px", flexShrink: 0,
+        padding: "10px 24px", flexShrink: 0,
         borderBottom: "1px solid var(--border)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -521,105 +461,92 @@ export function DossierGraph({ onBack, onGoToCompare }: Props) {
 
         {graph && (
           <div style={{ display: "flex", gap: 14, fontSize: 12, color: "var(--text-muted)" }}>
-            <StatPill label="docs"    value={graph.stats.doc_count}    />
+            <StatPill label="docs"        value={graph.stats.doc_count} />
             <StatPill label="connections" value={graph.stats.edge_count} />
-            <StatPill label="links"   value={graph.stats.total_links}   />
+            <StatPill label="links"       value={graph.stats.total_links} />
           </div>
         )}
 
-        {/* Legend */}
         <div style={{ display: "flex", gap: 10, marginLeft: "auto", alignItems: "center", flexWrap: "wrap" }}>
           <LegItem color="#22c55e" label="OK" />
           <LegItem color="#f59e0b" label="Unverified" />
           <LegItem color="#ef4444" label="Broken" />
-          <span style={{ width: 1, height: 14, background: "var(--border)", display: "inline-block", margin: "0 2px" }} />
+          <Divider />
           <LegItem color="#818cf8" label="PDF"  circle />
           <LegItem color="#38bdf8" label="DOCX" circle />
-          <span style={{ width: 1, height: 14, background: "var(--border)", display: "inline-block", margin: "0 2px" }} />
+          <Divider />
           <span style={{ fontSize: 10, color: "var(--text-muted)" }}>— regex</span>
           <span style={{ fontSize: 10, color: "var(--text-muted)" }}>– – NER</span>
           <span style={{ fontSize: 10, color: "var(--text-muted)" }}>·· LLM</span>
         </div>
       </div>
 
-      {/* ── Canvas ── */}
+      {/* ── Graph canvas — flex:1 so it fills the remaining height exactly ── */}
       <div
         ref={containerRef}
         style={{
-          flex: 1, position: "relative",
+          flex: 1,
+          position: "relative",
           margin: "16px 24px 24px",
           borderRadius: 12,
           border: "1px solid var(--border)",
+          // overflow:hidden clips the SVG so it never pushes the parent taller
           overflow: "hidden",
           background: "#080f1e",
-          minHeight: 400,
+          // min-height prevents collapsing to 0 in some flex parents
+          minHeight: 300,
         }}
       >
-        {/* Loading */}
         {loading && (
           <Overlay>
             <Spinner />
             <span style={{ marginTop: 12, fontSize: 13, color: "#94a3b8" }}>Building graph…</span>
           </Overlay>
         )}
+        {error  && <Overlay><span style={{ color: "#ef4444", fontSize: 13 }}>{error}</span></Overlay>}
+        {isEmpty && <Overlay><span style={{ color: "#64748b", fontSize: 13 }}>No documents in this run.</span></Overlay>}
 
-        {/* Error */}
-        {error && <Overlay><span style={{ color: "#ef4444", fontSize: 13 }}>{error}</span></Overlay>}
-
-        {/* Empty run */}
-        {isEmpty && (
-          <Overlay>
-            <span style={{ color: "#64748b", fontSize: 13 }}>No documents found in this run.</span>
-          </Overlay>
-        )}
-
-        {/* No cross-doc edges warning */}
         {noEdges && !loading && (
           <div style={{
             position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)",
             background: "rgba(245,158,11,0.12)", border: "1px solid #d97706",
             borderRadius: 8, padding: "6px 16px", fontSize: 12, color: "#fbbf24", zIndex: 2,
           }}>
-            No cross-document links — only internal or external links were detected.
+            No cross-document links found.
           </div>
         )}
 
-        {/* SVG */}
+        {/* SVG fills the container via position:absolute + inset:0 */}
         <svg
           ref={svgRef}
-          width={dims.w}
-          height={dims.h}
-          style={{ display: showSVG ? "block" : "none", width: "100%", height: "100%" }}
+          style={{
+            display: showSVG ? "block" : "none",
+            position: "absolute", inset: 0,
+            width: "100%", height: "100%",
+          }}
         />
 
-        {/* Tooltip */}
         {tooltip && (
-          <div
-            style={{
-              position: "fixed",
-              left: tooltip.x, top: tooltip.y,
-              background: "#1e293b",
-              border: "1px solid #334155",
-              borderRadius: 8,
-              padding: "8px 12px",
-              fontSize: 12, color: "#e2e8f0",
-              pointerEvents: "none", zIndex: 9999,
-              maxWidth: 300,
-              boxShadow: "0 8px 28px rgba(0,0,0,0.5)",
-              lineHeight: 1.6,
-            }}
+          <div style={{
+            position: "fixed",
+            left: tooltip.x, top: tooltip.y,
+            background: "#1e293b", border: "1px solid #334155",
+            borderRadius: 8, padding: "8px 12px",
+            fontSize: 12, color: "#e2e8f0",
+            pointerEvents: "none", zIndex: 9999, maxWidth: 300,
+            boxShadow: "0 8px 28px rgba(0,0,0,0.55)", lineHeight: 1.6,
+          }}
             dangerouslySetInnerHTML={{ __html: tooltip.html }}
           />
         )}
 
-        {/* Hint */}
         {showSVG && (
           <div style={{
             position: "absolute", bottom: 10, right: 12,
             fontSize: 10, color: "#475569",
-            background: "rgba(8,15,30,0.7)", borderRadius: 6, padding: "3px 8px",
+            background: "rgba(8,15,30,0.75)", borderRadius: 6, padding: "3px 8px",
           }}>
-            Scroll to zoom · Drag to pan · Drag node to pin · Click doc to open Run Compare
+            Scroll to zoom · Drag canvas to pan · Drag node to pin · Click doc to open Run Compare
           </div>
         )}
       </div>
@@ -627,14 +554,13 @@ export function DossierGraph({ onBack, onGoToCompare }: Props) {
   );
 }
 
-// ── sub-components ────────────────────────────────────────────────────────────
+// ── tiny sub-components ───────────────────────────────────────────────────────
 
-function Overlay({ children }: { children: React.ReactNode }) {
+function Overlay({ children }: { children: ReactNode }) {
   return (
     <div style={{
-      position: "absolute", inset: 0,
-      display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center",
+      position: "absolute", inset: 0, display: "flex",
+      flexDirection: "column", alignItems: "center", justifyContent: "center",
     }}>
       {children}
     </div>
@@ -643,7 +569,8 @@ function Overlay({ children }: { children: React.ReactNode }) {
 
 function Spinner() {
   return (
-    <svg width="36" height="36" viewBox="0 0 36 36" style={{ animation: "spin 1s linear infinite" }}>
+    <svg width="36" height="36" viewBox="0 0 36 36"
+      style={{ animation: "spin 1s linear infinite" }}>
       <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
       <circle cx="18" cy="18" r="14" stroke="#6366f1" strokeWidth="3"
         fill="none" strokeDasharray="60" strokeDashoffset="20" />
@@ -660,6 +587,10 @@ function StatPill({ label, value }: { label: string; value: number }) {
   );
 }
 
+function Divider() {
+  return <span style={{ width: 1, height: 14, background: "var(--border)", display: "inline-block", margin: "0 2px" }} />;
+}
+
 function LegItem({ color, label, circle }: { color: string; label: string; circle?: boolean }) {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--text-muted)" }}>
@@ -671,6 +602,3 @@ function LegItem({ color, label, circle }: { color: string; label: string; circl
     </span>
   );
 }
-
-// Silence unused import warning — shortName used by callers
-void shortName;
