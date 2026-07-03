@@ -305,12 +305,12 @@ function AppShell() {
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
 
         {/* ── Header ── */}
-        <header className="app-header" style={{ flexShrink: 0 }}>
+        <header className="topbar" style={{ flexShrink: 0 }}>
           <button
             onClick={() => setNavOpen((o) => !o)}
             style={{
               background: "none", border: "none", cursor: "pointer",
-              color: "#e8e8e8", fontSize: 18, padding: "0 4px", marginRight: 4,
+              color: "var(--text-muted)", fontSize: 18, padding: "0 4px", marginRight: 4,
               display: "inline-flex", alignItems: "center",
             }}
             title="Toggle sidebar"
@@ -322,19 +322,9 @@ function AppShell() {
             </svg>
           </button>
 
-          <span
-            className="logo"
-            style={{ cursor: "pointer" }}
-            onClick={() => navigate("pipeline")}
-          >
-            Hyperlink Engine
-          </span>
-
-          {active && (
-            <span style={{ marginLeft: 12, fontSize: 13, color: "rgba(255,255,255,0.5)" }}>
-              / {active.label}
-            </span>
-          )}
+          <div className="page-name">
+            {active ? active.label : "Hyperlink Engine"}
+          </div>
 
           {/* <SecurityControls /> */}
           <span className="on-prem-badge">On-Prem</span>
@@ -363,21 +353,17 @@ function AppShell() {
 
           {/* ── Sidebar ── */}
           {navOpen && (
-            <nav style={{
-              width: 200, flexShrink: 0,
-              background: "var(--surface)",
-              borderRight: "1px solid var(--border)",
-              overflowY: "auto",
-              padding: "12px 0",
-            }}>
+            <nav className="sidebar">
+              <div className="brand">
+                <span className="brand-mark">◆</span>
+                <div>
+                  <div className="brand-name">Hyperlink Engine</div>
+                  <div className="brand-sub">Regulatory Linker</div>
+                </div>
+              </div>
               {NAV_GROUPS.map((grp) => (
-                <div key={grp.label} style={{ marginBottom: 8 }}>
-                  <div style={{
-                    padding: "6px 16px 4px",
-                    fontSize: 10, fontWeight: 700,
-                    textTransform: "uppercase", letterSpacing: "0.08em",
-                    color: "var(--text-muted)",
-                  }}>
+                <div key={grp.label} className="nav-group">
+                  <div className="nav-group-label">
                     {grp.label}
                   </div>
                   {grp.items.map((item) => {
@@ -387,28 +373,12 @@ function AppShell() {
                       <button
                         key={item.screen}
                         onClick={() => navigate(item.screen)}
-                        style={{
-                          display: "flex", alignItems: "center",
-                          width: "100%", padding: "8px 16px",
-                          border: "none", cursor: "pointer", textAlign: "left",
-                          fontSize: 13,
-                          fontWeight: isActive ? 600 : 400,
-                          background: isActive ? "var(--brand-tint)" : "transparent",
-                          color: isActive ? "var(--primary)" : "var(--text)",
-                          borderLeft: isActive ? "3px solid var(--primary)" : "3px solid transparent",
-                          transition: "all 0.1s",
-                          gap: 10,
-                        }}
+                        className={"nav-item" + (isActive ? " active" : "")}
                       >
                         <Icon size={16} stroke={isActive ? 2 : 1.6} />
                         <span style={{ flex: 1 }}>{item.label}</span>
                         {item.screen === "review" && reviewCount > 0 && (
-                          <span style={{
-                            background: "var(--danger, #dc2626)", color: "#fff",
-                            borderRadius: 10, fontSize: 10, fontWeight: 700,
-                            minWidth: 18, height: 18, padding: "0 5px",
-                            display: "inline-flex", alignItems: "center", justifyContent: "center",
-                          }}>
+                          <span className="nav-badge">
                             {reviewCount}
                           </span>
                         )}
