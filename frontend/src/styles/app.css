@@ -8,58 +8,69 @@
    --card-bg, --brand) that were previously undefined and silently falling back. */
 :root {
   /* —————— Neutrals (cool slate) —————— */
-  --bg:            #FAFBFC;
-  --surface:       #FFFFFF;
+  --bg:            #f5f6f8;
+  --surface:       #ffffff;
   --surface-raised:#F4F6F9;
-  --surface-sunken:#EEF1F5;
-  --card-bg:       #FFFFFF;   /* alias used by some screens */
-  --border:        #E3E7EC;
-  --border-color:  #E3E7EC;   /* alias used by some screens */
-  --border-strong: #CCD3DC;
+  --surface-sunken:#f4f5f7;
+  --card-bg:       #ffffff;   /* alias used by some screens */
+  --border:        #e8eaef;
+  --border-color:  #e8eaef;   /* alias used by some screens */
+  --border-soft:   #eef0f4;
+  --border-strong: #d7dae1;
 
   /* —————— Text —————— */
-  --text:          #0F1623;
-  --text-primary:  #0F1623;   /* alias used by some screens */
+  --text:          #1b2230;
+  --text-primary:  #1b2230;   /* alias used by some screens */
   --text-1:        #0F1623;   /* design-system name */
   --text-2:        #4B5564;
   --text-3:        #6B7585;
-  --text-muted:    #5A6473;   /* alias used by some screens */
+  --text-muted:    #5b6573;   /* alias used by some screens */
   --text-disabled: #9AA3B2;
+  --muted:         #939bab;
 
   /* —————— Brand · Regulatory trust blue —————— */
-  --primary:       #1F4E8C;
-  --primary-dark:  #0F2C52;
-  --primary-bg:    #E8EFF8;
-  --brand:         #1F4E8C;   /* alias used by some screens */
+  --primary:       #5b53e6;
+  --primary-dark:  #4a41d4;
+  --primary-bg:    #ecebfd;
+  --brand:         #5b53e6;   /* alias used by some screens */
   --brand-hover:   #2E66B5;
   --brand-pressed: #0F2C52;
   --brand-tint:    #E8EFF8;
   --brand-tint-2:  #D3E0F1;
+  --accent:        #5b53e6;
+  --accent-soft:   #ecebfd;
+  --brand-grad:    linear-gradient(135deg,#6a61f0,#5046d8);
 
   /* —————— Semantic —————— */
-  --success:       #067647;
-  --success-bg:    #DCFAE6;
+  --success:       #157347;
+  --success-bg:    #e6f7ee;
   --success-tint:  #DCFAE6;   /* design-system name */
   --success-text:  #054F31;
 
-  --warning:       #B54708;
-  --warning-bg:    #FEF0C7;
+  --warning:       #9a6207;
+  --warning-bg:    #fdf2dd;
   --warning-tint:  #FEF0C7;   /* design-system name */
   --warning-text:  #93370D;
 
-  --danger:        #B42318;
-  --danger-bg:     #FEE4E2;
+  --danger:        #b42318;
+  --danger-bg:     #fdecec;
   --danger-tint:   #FEE4E2;   /* design-system name */
   --danger-text:   #912018;
 
-  --info:          #175CD3;
-  --info-bg:       #D1E9FF;
+  --info:          #2563eb;
+  --info-bg:       #e8f1fe;
   --info-tint:     #D1E9FF;   /* design-system name */
   --info-text:     #104EAD;
 
   --neutral:       #475467;
   --neutral-tint:  #EAECF0;
   --neutral-text:  #344054;
+
+  --green:         #16b364;
+  --amber:         #f5a524;
+  --orange:        #f97316;
+  --red:           #ef4444;
+  --blue:          #3b82f6;
 
   /* —————— Data viz (categorical, 8-step, muted) —————— */
   --viz-1: #4F8C8A;  /* teal */
@@ -87,13 +98,14 @@
   --sev-5:  #7A271A;
 
   /* —————— Elevation —————— */
-  --shadow:    0 1px 2px rgba(15,22,35,.06), 0 0 0 1px rgba(15,22,35,.04);
-  --shadow-md: 0 4px 12px rgba(15,22,35,.08), 0 1px 2px rgba(15,22,35,.04);
+  --shadow:    0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.06);
+  --shadow-md: 0 4px 12px rgba(16,24,40,.08);
   --shadow-1:  0 1px 2px rgba(15,22,35,.06), 0 0 0 1px rgba(15,22,35,.04);
   --shadow-2:  0 4px 12px rgba(15,22,35,.08), 0 1px 2px rgba(15,22,35,.04);
 
   /* —————— Radius —————— */
-  --radius: 8px;
+  --radius: 16px;
+  --radius-sm: 10px;
   --r-2: 2px;
   --r-4: 4px;
   --r-6: 6px;
@@ -111,9 +123,10 @@
   --s-12: 48px;
 
   /* —————— Type —————— */
-  --ff-sans: 'Inter', 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
-  --ff-display: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+  --ff-sans: 'Inter', system-ui, sans-serif;
+  --ff-display: 'Plus Jakarta Sans', 'Inter', sans-serif;
   --ff-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  --font-display: 'Plus Jakarta Sans', 'Inter', sans-serif;
 
   --fz-11: 11px;
   --fz-12: 12px;
