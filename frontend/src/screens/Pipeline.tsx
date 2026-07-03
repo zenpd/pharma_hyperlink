@@ -573,13 +573,13 @@ export function Pipeline({ onBack, onGoToReview, onCompareDoc }: Props) {
             onDrop={(e) => { e.preventDefault(); setDragging(false); void onDrop(e.dataTransfer); }}
             onClick={() => fileInputRef.current?.click()}
             style={{
-              border: `2px dashed ${dragging ? "var(--primary)" : "var(--border)"}`,
+              border: `2px dashed ${dragging ? "var(--primary)" : "#cfccf4"}`,
               borderRadius: "var(--radius)",
               padding: "32px 20px",
               textAlign: "center",
               cursor: "pointer",
-              background: dragging ? "var(--brand-tint-2)" : "var(--primary-bg)",
-              boxShadow: dragging ? "0 0 0 3px rgba(31,78,140,.12)" : "none",
+              background: dragging ? "#e4e2fb" : "#f4f3fe",
+              boxShadow: dragging ? "0 0 0 3px rgba(91,83,230,.12)" : "none",
               transition: "all 0.15s",
             }}
           >
