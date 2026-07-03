@@ -144,7 +144,20 @@ export function RunCompare({ onBack, active = true, initialRunId, initialDoc, on
     setError("");
     setPreview(null);
     api.pipeline.stagePreview(runId, doc, stage)
-      .then((p) => { setPreview(p); setLoadingPreview(false); })
+      .then((p) => {
+        setPreview(p);
+        setLoadingPreview(false);
+        // Pre-warm documentPreview for every unique cross-doc link target so
+        // ReferenceView loads instantly (cache hit) when the user clicks a link.
+        const seen = new Set<string>();
+        for (const link of p.links) {
+          const td = link.target_doc;
+          if (td && td !== doc && !seen.has(td)) {
+            seen.add(td);
+            api.pipeline.documentPreview(runId, td);
+          }
+        }
+      })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : "Failed to load preview");
         setLoadingPreview(false);
