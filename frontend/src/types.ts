@@ -154,6 +154,30 @@ export interface DetectionTraceData {
   per_doc: DetectionTracePerDoc[];
 }
 
+// Graph node/edge types for the Dossier Graph visualization
+export interface GraphNode {
+  id: string;
+  label: string;
+  type: "pdf" | "docx";
+  link_count: number;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  count: number;
+  detected_by: "regex" | "ner" | "llm" | string;
+  status: "ok" | "broken" | "unverified";
+  detected_by_counts: Record<string, number>;
+}
+
+export interface RunGraph {
+  run_id: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  stats: { doc_count: number; edge_count: number; total_links: number };
+}
+
 export type Screen =
   | "dashboard"
   | "issues"
@@ -166,7 +190,8 @@ export type Screen =
   | "links-table"
   | "export"
   | "run-compare"
-  | "reference-view";
+  | "reference-view"
+  | "dossier-graph";
 
 // ── Selectable agents (Plan Three) ─────────────────────────────────────────────
 

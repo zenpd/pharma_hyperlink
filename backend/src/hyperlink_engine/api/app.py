@@ -2044,6 +2044,91 @@ def create_app(
             state = _require_run(run_id)
             return DetectionTraceResponse(**_detection_trace_from_links(_run_links(state)))
 
+        @app.get("/api/pipeline/run/{run_id}/graph", dependencies=_CLASSIFIED_GATE)
+        def pipeline_run_graph(run_id: str) -> dict[str, Any]:
+            """
+            Document-connectivity graph for d3.js force-directed visualization.
+
+            Returns nodes (documents) and directed edges (cross-doc hyperlinks)
+            with per-edge counts, dominant detection method, and link health.
+            """
+            state = _require_run(run_id)
+            links = _run_links(state)
+
+            # Collect all document names that appear as source or cross-doc target
+            doc_set: set[str] = set()
+            link_count_by_doc: dict[str, int] = {}
+            for lnk in links:
+                src = lnk.get("source_doc", "")
+                tgt = lnk.get("target_doc", "")
+                if src:
+                    doc_set.add(src)
+                    link_count_by_doc[src] = link_count_by_doc.get(src, 0) + 1
+                if tgt and lnk.get("link_kind") in ("cross_doc", "cross_module"):
+                    doc_set.add(tgt)
+
+            nodes = [
+                {
+                    "id": d,
+                    "label": d.replace("_linked.pdf", "").replace("_linked.docx", "")
+                             .replace(".pdf", "").replace(".docx", ""),
+                    "type": "pdf" if d.lower().endswith(".pdf") else "docx",
+                    "link_count": link_count_by_doc.get(d, 0),
+                }
+                for d in sorted(doc_set)
+            ]
+
+            # Aggregate directed cross-doc edges
+            edge_key_map: dict[str, dict[str, Any]] = {}
+            for lnk in links:
+                if lnk.get("link_kind") not in ("cross_doc", "cross_module"):
+                    continue
+                src = lnk.get("source_doc", "")
+                tgt = lnk.get("target_doc", "")
+                if not src or not tgt or src == tgt:
+                    continue
+                key = f"{src}\x00{tgt}"
+                if key not in edge_key_map:
+                    edge_key_map[key] = {
+                        "source": src,
+                        "target": tgt,
+                        "count": 0,
+                        "detected_by_counts": {},
+                        "statuses": [],
+                    }
+                rec = edge_key_map[key]
+                rec["count"] += 1
+                db = lnk.get("detected_by", "regex") or "regex"
+                rec["detected_by_counts"][db] = rec["detected_by_counts"].get(db, 0) + 1
+                rec["statuses"].append(lnk.get("status", "unverified"))
+
+            edges = []
+            for rec in edge_key_map.values():
+                # Dominant detection method
+                detected_by = max(rec["detected_by_counts"], key=rec["detected_by_counts"].get)
+                # Worst-case status (broken > unverified > ok)
+                statuses = set(rec["statuses"])
+                status = "broken" if "broken" in statuses else ("unverified" if "unverified" in statuses else "ok")
+                edges.append({
+                    "source": rec["source"],
+                    "target": rec["target"],
+                    "count": rec["count"],
+                    "detected_by": detected_by,
+                    "status": status,
+                    "detected_by_counts": rec["detected_by_counts"],
+                })
+
+            return {
+                "run_id": run_id,
+                "nodes": nodes,
+                "edges": edges,
+                "stats": {
+                    "doc_count": len(nodes),
+                    "edge_count": len(edges),
+                    "total_links": len(links),
+                },
+            }
+
         _EXPORT_COLS = [
             "source_doc", "link_text", "link_location_descriptor",
             "target_doc", "target_anchor", "status", "confidence",

@@ -7,6 +7,7 @@ import type {
   LinkSnippet,
   RunStages,
   DetectionTraceData,
+  RunGraph,
   RunSummary,
   ReviewRun,
   ComplianceResult,
@@ -345,6 +346,10 @@ export const api = {
       _invalidatePreviewCache(runId);
       return data.updated;
     },
+
+    /** Document-connectivity graph for the Dossier Graph visualization. */
+    runGraph: (runId: string) =>
+      get<RunGraph>(`${PIPELINE_BASE}/run/${runId}/graph`),
   },
 
   // ── Auth + security (PLAN SEVEN) ───────────────────────────────────────

@@ -24,6 +24,7 @@ import {
   IconFileExport,
   IconScale,
   IconSearch,
+  IconTopologyComplex,
 } from "@tabler/icons-react";
 import { api } from "./api";
 import { Dashboard } from "./screens/Dashboard";
@@ -38,6 +39,7 @@ import { LinksTable } from "./screens/LinksTable";
 import { ExportCenter } from "./screens/ExportCenter";
 import { RunCompare } from "./screens/RunCompare";
 import { ReferenceView } from "./screens/ReferenceView";
+import { DossierGraph } from "./screens/DossierGraph";
 import type { RefTarget } from "./screens/ReferenceView";
 import { ActiveRunProvider } from "./contexts/ActiveRun";
 import { AuthProvider, useAuth } from "./contexts/Auth";
@@ -107,6 +109,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { screen: "comparison", label: "Comparison", icon: IconScale },
       { screen: "detection-trace", label: "Detection Trace", icon: IconSearch },
+      { screen: "dossier-graph", label: "Dossier Graph", icon: IconTopologyComplex },
     ],
   },
 ];
@@ -491,6 +494,13 @@ function AppShell() {
 
             {slot("detection-trace", (
               <DetectionTrace onBack={() => navigate("dashboard")} />
+            ))}
+
+            {slot("dossier-graph", (
+              <DossierGraph
+                onBack={() => navigate("pipeline")}
+                onGoToCompare={(rid, doc) => { goToRunCompare(rid, doc); }}
+              />
             ))}
 
           </main>
