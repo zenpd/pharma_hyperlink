@@ -61,12 +61,14 @@ interface SimLink extends d3.SimulationLinkDatum<SimNode> {
 // ── component ────────────────────────────────────────────────────────────────
 
 export function DossierGraph({ onBack, onGoToCompare }: Props) {
-  const [runs, setRuns]       = useState<{ run_id: string }[]>([]);
-  const [runId, setRunId]     = useState<string | null>(null);
-  const [graph, setGraph]     = useState<RunGraph | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState("");
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; html: string } | null>(null);
+  const [runs, setRuns]           = useState<{ run_id: string }[]>([]);
+  const [runId, setRunId]         = useState<string | null>(null);
+  const [graph, setGraph]         = useState<RunGraph | null>(null);
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState("");
+  const [tooltip, setTooltip]     = useState<{ x: number; y: number; html: string } | null>(null);
+  const [deleting, setDeleting]   = useState(false);
+  const [clearingAll, setClearingAll] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef       = useRef<SVGSVGElement>(null);
@@ -83,6 +85,54 @@ export function DossierGraph({ onBack, onGoToCompare }: Props) {
         if (done.length > 0) setRunId(done[0].run_id);
       })
       .catch(() => {});
+  }, []);
+
+  // ── reload run list helper ────────────────────────────────────────────────
+  const reloadRuns = useCallback((): Promise<{ run_id: string }[]> => {
+    return api.pipeline.listRuns()
+      .then((data) => {
+        const done = (data.runs ?? [])
+          .filter((r) => r.status === "done")
+          .sort((a, b) => b.run_id.localeCompare(a.run_id));
+        setRuns(done);
+        return done;
+      })
+      .catch(() => { setRuns([]); return []; });
+  }, []);
+
+  // ── delete current run ────────────────────────────────────────────────────
+  const handleDeleteRun = useCallback(async () => {
+    if (!runId) return;
+    if (!confirm(`Remove run "${runId}" from the graph? This clears it from memory (output files kept).`)) return;
+    setDeleting(true);
+    try {
+      await api.pipeline.deleteRun(runId);
+      setGraph(null);
+      setRunId(null);
+      reloadRuns().then((done) => {
+        if (done.length > 0) setRunId(done[0].run_id);
+      });
+    } catch {
+      // silently ignore — run may already be gone
+    } finally {
+      setDeleting(false);
+    }
+  }, [runId, reloadRuns]);
+
+  // ── clear all runs ────────────────────────────────────────────────────────
+  const handleClearAll = useCallback(async () => {
+    if (!confirm("Remove all runs from the graph view? This clears them from memory (output files kept).")) return;
+    setClearingAll(true);
+    try {
+      await api.pipeline.clearAllRuns();
+      setGraph(null);
+      setRunId(null);
+      setRuns([]);
+    } catch {
+      // silently ignore
+    } finally {
+      setClearingAll(false);
+    }
   }, []);
 
   // ── load graph when run changes ───────────────────────────────────────────
@@ -457,6 +507,44 @@ export function DossierGraph({ onBack, onGoToCompare }: Props) {
               <option key={r.run_id} value={r.run_id}>{r.run_id}</option>
             ))}
           </select>
+
+          {/* Delete this run */}
+          <button
+            onClick={handleDeleteRun}
+            disabled={!runId || deleting}
+            title="Remove this run from the graph"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 5,
+              fontSize: 12, padding: "4px 10px", borderRadius: 6,
+              border: "1px solid #ef4444", background: "transparent",
+              color: "#ef4444", cursor: runId && !deleting ? "pointer" : "not-allowed",
+              opacity: !runId || deleting ? 0.45 : 1, transition: "background .15s",
+            }}
+            onMouseEnter={(e) => { if (runId && !deleting) (e.currentTarget as HTMLButtonElement).style.background = "rgba(239,68,68,.1)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+          >
+            {deleting ? "…" : "✕"} Delete run
+          </button>
+
+          {/* Clear all */}
+          {runs.length > 1 && (
+            <button
+              onClick={handleClearAll}
+              disabled={clearingAll}
+              title="Remove all runs from the graph"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                fontSize: 12, padding: "4px 10px", borderRadius: 6,
+                border: "1px solid var(--border)", background: "transparent",
+                color: "var(--text-muted)", cursor: !clearingAll ? "pointer" : "not-allowed",
+                opacity: clearingAll ? 0.45 : 1, transition: "background .15s",
+              }}
+              onMouseEnter={(e) => { if (!clearingAll) (e.currentTarget as HTMLButtonElement).style.background = "rgba(100,116,139,.12)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+            >
+              {clearingAll ? "Clearing…" : "⊗ Clear all"}
+            </button>
+          )}
         </div>
 
         {graph && (
@@ -494,7 +582,7 @@ export function DossierGraph({ onBack, onGoToCompare }: Props) {
           overflow: "hidden",
           background: "#080f1e",
           // min-height prevents collapsing to 0 in some flex parents
-          minHeight: 300,
+          minHeight: 560,
         }}
       >
         {loading && (

@@ -39,7 +39,12 @@
   --brand-tint-2:  #D3E0F1;
   --accent:        #5b53e6;
   --accent-soft:   #ecebfd;
-  --brand-grad:    linear-gradient(135deg,#6a61f0,#5046d8);
+  --brand-grad:    linear-gradient(135deg,#6a61f0 0%,#5046d8 55%,#059669 100%);
+
+  /* —————— Healthcare accent —————— */
+  --health-green:  #059669;
+  --health-tint:   #d1fae5;
+  --health-text:   #064e3b;
 
   /* —————— Semantic —————— */
   --success:       #157347;
@@ -123,7 +128,7 @@
   --s-12: 48px;
 
   /* —————— Type —————— */
-  --ff-sans: 'Inter', system-ui, sans-serif;
+  --ff-sans: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
   --ff-display: 'Plus Jakarta Sans', 'Inter', sans-serif;
   --ff-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
   --font-display: 'Plus Jakarta Sans', 'Inter', sans-serif;
@@ -214,14 +219,16 @@
 }
 
 body {
-  font-family: 'Inter', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
   font-size: 14px;
-  line-height: 1.45;
-  font-feature-settings: 'tnum';
+  line-height: 1.5;
+  font-feature-settings: 'tnum', 'liga', 'cv01';
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
 }
 
 /* ── Layout ────────────────────────────────────────────────────────────────── */
@@ -839,20 +846,127 @@ button:active { opacity: 1;    transform: translateY(0);    }
    Step 2 — Topbar + Sidebar + Nav classes
    ════════════════════════════════════════════════════════════════════════════ */
 
-.topbar{background:var(--surface);height:68px;display:flex;align-items:center;gap:14px;padding:0 30px;position:sticky;top:0;z-index:100;border-bottom:1px solid var(--border);}
-.topbar .page-name{font-family:var(--font-display);font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.1;}
-.topbar .page-sub{font-size:12.5px;color:var(--text-muted);margin-top:1px;}
-.on-prem-badge{margin-left:auto;font-size:11px;font-weight:600;background:var(--success-bg);color:var(--success);padding:5px 12px;border-radius:20px;display:inline-flex;align-items:center;gap:6px;}
-.sidebar{width:256px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:20px 14px;}
-.brand{display:flex;align-items:center;gap:12px;padding:0 6px 20px;}
-.brand-mark{width:42px;height:42px;border-radius:12px;background:var(--brand-grad);display:inline-flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 4px 12px rgba(80,70,216,.28);}
-.brand-name{font-family:var(--font-display);font-weight:800;font-size:15px;}
-.brand-sub{font-size:11.5px;color:var(--text-muted);}
-.nav-group{margin-bottom:16px;}
-.nav-group-label{padding:6px 12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
-.nav-item{display:flex;align-items:center;gap:12px;width:100%;padding:9px 12px;border:none;cursor:pointer;text-align:left;font-size:14px;font-weight:500;background:transparent;color:var(--text-muted);border-radius:var(--radius-sm);margin-bottom:2px;}
-.nav-item:hover{background:var(--surface-sunken);}
-.nav-item.active{background:var(--accent-soft);color:var(--accent);font-weight:600;}
+.topbar{
+  background:var(--surface);
+  height:68px;
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:0 30px;
+  position:sticky;
+  top:0;
+  z-index:100;
+  border-bottom:1px solid var(--border);
+  box-shadow:0 1px 3px rgba(16,24,40,.05);
+}
+.topbar .page-name{
+  font-family:var(--font-display);
+  font-size:21px;
+  font-weight:800;
+  letter-spacing:-.03em;
+  line-height:1.1;
+  background:linear-gradient(135deg,var(--primary),var(--health-green));
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+.topbar .page-sub{
+  font-size:11.5px;
+  color:var(--text-muted);
+  margin-top:1px;
+  font-weight:500;
+  letter-spacing:.01em;
+}
+.on-prem-badge{
+  margin-left:auto;
+  font-size:11px;
+  font-weight:700;
+  background:linear-gradient(135deg,var(--health-tint),#e0f2fe);
+  color:var(--health-green);
+  padding:5px 13px;
+  border-radius:20px;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  border:1px solid rgba(5,150,105,.15);
+  letter-spacing:.02em;
+}
+.sidebar{
+  width:264px;
+  flex-shrink:0;
+  background:var(--surface);
+  border-right:1px solid var(--border);
+  overflow-y:auto;
+  padding:20px 14px;
+}
+.brand{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:4px 6px 22px;
+  border-bottom:1px solid var(--border-soft);
+  margin-bottom:6px;
+}
+.brand-mark{
+  width:44px;
+  height:44px;
+  border-radius:13px;
+  background:var(--brand-grad);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  color:#fff;
+  box-shadow:0 4px 16px rgba(80,70,216,.32),0 1px 3px rgba(5,150,105,.2);
+  flex-shrink:0;
+}
+.brand-name{
+  font-family:var(--font-display);
+  font-weight:800;
+  font-size:14.5px;
+  letter-spacing:-.02em;
+  line-height:1.2;
+}
+.brand-sub{
+  font-size:11px;
+  font-weight:600;
+  color:var(--health-green);
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  margin-top:2px;
+}
+.nav-group{margin-bottom:20px;}
+.nav-group-label{
+  padding:4px 12px 8px;
+  font-size:10.5px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:var(--muted);
+}
+.nav-item{
+  display:flex;
+  align-items:center;
+  gap:11px;
+  width:100%;
+  padding:9px 12px;
+  border:none;
+  cursor:pointer;
+  text-align:left;
+  font-size:13.5px;
+  font-weight:500;
+  background:transparent;
+  color:var(--text-muted);
+  border-radius:var(--radius-sm);
+  margin-bottom:1px;
+  transition:background var(--t-fast),color var(--t-fast);
+  font-family:var(--ff-sans);
+}
+.nav-item:hover{background:var(--surface-sunken);color:var(--text);}
+.nav-item.active{
+  background:linear-gradient(90deg,var(--accent-soft),rgba(5,150,105,.06));
+  color:var(--accent);
+  font-weight:650;
+}
 .nav-badge{margin-left:auto;background:var(--red);color:#fff;border-radius:10px;font-size:10px;font-weight:700;min-width:18px;height:18px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;}
 .stat-box{position:relative;overflow:hidden;}
 .stat-box::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--accent);}

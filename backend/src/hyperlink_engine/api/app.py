@@ -894,6 +894,38 @@ def _read_pdf_blocks(pdf_path: "Path", *, detect_tables: bool = True, render_ima
                                     raw_boxes.append((_rect.x0, _rect.y0, _rect.x1, _rect.y1))
                     except Exception:  # noqa: BLE001 — image list is best-effort
                         pass
+
+                    # Vector-drawn figures (PK plots, forest plots, Kaplan-Meier
+                    # curves, bar charts …) are rendered by PDF path operators and
+                    # never appear in get_images(). get_drawings() returns every
+                    # path's bounding rect; we add substantial non-table paths to
+                    # raw_boxes so _cluster_image_rects groups them into one region
+                    # that the existing pixmap rasteriser then captures faithfully.
+                    try:
+                        for _drw in (page.get_drawings() or []):
+                            _r = _drw.get("rect")
+                            if _r is None:
+                                continue
+                            _dw, _dh = float(_r.width), float(_r.height)
+                            # Skip thin rules, separator lines, border strokes
+                            if _dw < 40 or _dh < 40:
+                                continue
+                            # Skip near-full-page fills (backgrounds, outer borders)
+                            if _dw >= 0.85 * page_w and _dh >= 0.85 * page_h:
+                                continue
+                            # Skip paths that sit inside a detected table grid
+                            if table_bboxes and _inside_a_table(
+                                float(_r.x0), float(_r.y0),
+                                float(_r.x1), float(_r.y1),
+                            ):
+                                continue
+                            raw_boxes.append((
+                                float(_r.x0), float(_r.y0),
+                                float(_r.x1), float(_r.y1),
+                            ))
+                    except Exception:  # noqa: BLE001 — vector detection is best-effort
+                        pass
+
                     for x0, y0, x1, y1 in _cluster_image_rects(raw_boxes):
                         if (x1 - x0) < 8 or (y1 - y0) < 8:
                             continue
@@ -1806,6 +1838,36 @@ def create_app(
             run_store.update(state)
             return {"run_id": run_id, "status": "cancelling"}
 
+        @app.delete("/api/pipeline/run/{run_id}")
+        def pipeline_delete_run(
+            run_id: str,
+            remove_disk: bool = False,
+        ) -> dict[str, Any]:
+            """Remove a single run from the store.
+
+            Pass ``?remove_disk=true`` to also delete its ``output/runs/{run_id}/``
+            directory. Without the flag only the in-memory entry is cleared (the
+            directory survives for audit/debug purposes and will be re-hydrated on
+            the next server restart unless the disk flag is also set).
+            """
+            from hyperlink_engine.orchestration.state import run_store
+
+            deleted = run_store.delete(run_id, remove_disk=remove_disk)
+            if not deleted:
+                raise HTTPException(status_code=404, detail=f"run_id {run_id!r} not found")
+            return {"run_id": run_id, "deleted": True, "disk_removed": remove_disk}
+
+        @app.delete("/api/pipeline/runs")
+        def pipeline_delete_all_runs(remove_disk: bool = False) -> dict[str, Any]:
+            """Remove every run from the in-memory store.
+
+            Pass ``?remove_disk=true`` to also wipe ``output/runs/`` entirely.
+            """
+            from hyperlink_engine.orchestration.state import run_store
+
+            count = run_store.delete_all(remove_disk=remove_disk)
+            return {"deleted": count, "disk_removed": remove_disk}
+
         @app.get("/api/pipeline/stream/{run_id}", dependencies=_CLASSIFIED_GATE)
         async def pipeline_stream(run_id: str) -> StreamingResponse:
             """SSE endpoint: yields JSON events as the pipeline advances."""
@@ -2061,10 +2123,11 @@ def create_app(
             for lnk in links:
                 src = lnk.get("source_doc", "")
                 tgt = lnk.get("target_doc", "")
+                lk  = lnk.get("link_kind") or ("cross_doc" if tgt and tgt != src else "internal")
                 if src:
                     doc_set.add(src)
                     link_count_by_doc[src] = link_count_by_doc.get(src, 0) + 1
-                if tgt and lnk.get("link_kind") in ("cross_doc", "cross_module"):
+                if tgt and tgt != src and lk in ("cross_doc", "cross_module"):
                     doc_set.add(tgt)
 
             nodes = [
@@ -2081,11 +2144,17 @@ def create_app(
             # Aggregate directed cross-doc edges
             edge_key_map: dict[str, dict[str, Any]] = {}
             for lnk in links:
-                if lnk.get("link_kind") not in ("cross_doc", "cross_module"):
-                    continue
                 src = lnk.get("source_doc", "")
                 tgt = lnk.get("target_doc", "")
                 if not src or not tgt or src == tgt:
+                    continue
+                link_kind = lnk.get("link_kind")
+                # Infer cross-doc when link_kind is absent (e.g. disk-hydrated runs
+                # from validation_report.csv which has no link_kind column) but a
+                # distinct target document is present.
+                if not link_kind:
+                    link_kind = "cross_doc"
+                if link_kind not in ("cross_doc", "cross_module"):
                     continue
                 key = f"{src}\x00{tgt}"
                 if key not in edge_key_map:

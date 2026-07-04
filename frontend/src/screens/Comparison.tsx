@@ -403,9 +403,39 @@ export function Comparison({ onBack }: Props) {
                     </span>
                   </div>
                   <div style={{ padding: "12px 14px", maxHeight: 520, overflowY: "auto", fontSize: 13, lineHeight: 1.65 }}>
-                    {preview.paragraphs.map((p) => (
-                      <p key={p.index} style={{ margin: "0 0 8px", color: "#444" }}>{p.text}</p>
-                    ))}
+                    {preview.paragraphs.map((p) => {
+                      if (p.type === "table" && p.rows && p.rows.length > 0) {
+                        return (
+                          <div key={p.index} style={{ margin: "10px 0 14px" }}>
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", padding: "2px 7px", borderRadius: 4, marginBottom: 6, background: "#e8eaf6", color: "#3949ab" }}>⊞ Table</div>
+                            <div style={{ border: "1px solid #c5cae9", borderRadius: 6, overflow: "hidden" }}>
+                              <table style={{ borderCollapse: "collapse", width: "100%", margin: 0, fontSize: 12, background: "#fff" }}>
+                                <tbody>
+                                  {p.rows.map((row, ri) => (
+                                    <tr key={ri} style={{ background: ri % 2 === 0 ? "#fafafa" : "#fff" }}>
+                                      {row.map((cell, ci) => (
+                                        <td key={ci} style={{ border: "1px solid #cfd8dc", padding: "4px 8px", textAlign: "left", verticalAlign: "top" }}>{cell}</td>
+                                      ))}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        );
+                      }
+                      if (p.type === "image" && p.src) {
+                        return (
+                          <div key={p.index} style={{ margin: "10px 0 14px" }}>
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", padding: "2px 7px", borderRadius: 4, marginBottom: 6, background: "#e0f2f1", color: "#00695c" }}>⬚ Figure</div>
+                            <div style={{ border: "1px solid #b2dfdb", borderRadius: 6, overflow: "hidden", background: "#f5fffe", padding: 8, display: "inline-block", maxWidth: "100%" }}>
+                              <img src={p.src} alt="figure" style={{ display: "block", width: p.width_frac ? `${Math.round(p.width_frac * 100)}%` : undefined, maxWidth: "100%", height: "auto" }} />
+                            </div>
+                          </div>
+                        );
+                      }
+                      return <p key={p.index} style={{ margin: "0 0 8px", color: "#444" }}>{p.text}</p>;
+                    })}
                   </div>
                 </div>
 
@@ -427,6 +457,51 @@ export function Comparison({ onBack }: Props) {
                   </div>
                   <div style={{ padding: "12px 14px", maxHeight: 520, overflowY: "auto", fontSize: 13, lineHeight: 1.65, position: "relative" }}>
                     {preview.paragraphs.map((p) => {
+                      if (p.type === "table" && p.rows && p.rows.length > 0) {
+                        return (
+                          <div key={p.index} style={{ margin: "10px 0 14px" }}>
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", padding: "2px 7px", borderRadius: 4, marginBottom: 6, background: "#e8eaf6", color: "#3949ab" }}>⊞ Table</div>
+                            <div style={{ border: "1px solid #c5cae9", borderRadius: 6, overflow: "hidden" }}>
+                              <table style={{ borderCollapse: "collapse", width: "100%", margin: 0, fontSize: 12, background: "#fff" }}>
+                                <tbody>
+                                  {p.rows.map((row, ri) => (
+                                    <tr key={ri} style={{ background: ri % 2 === 0 ? "#fafafa" : "#fff" }}>
+                                      {row.map((cell, ci) => {
+                                        const segs = segmentParagraph(cell, preview.links);
+                                        return (
+                                          <td key={ci} style={{ border: "1px solid #cfd8dc", padding: "4px 8px", textAlign: "left", verticalAlign: "top" }}>
+                                            {segs.map((seg, si) => {
+                                              if (!seg.isLink || !seg.link) return <span key={si}>{seg.text}</span>;
+                                              const c = linkColor(seg.link.status);
+                                              return (
+                                                <span key={si}
+                                                  title={`Click to preview: ${seg.link.target_anchor || seg.link.target_doc || "—"}`}
+                                                  style={{ background: c.bg, color: c.color, border: `1px solid ${c.border}`, borderRadius: 3, padding: "0 3px", cursor: "pointer", fontWeight: 500, textDecoration: "underline", textDecorationStyle: "dotted" }}
+                                                  onClick={() => handleLinkClick(seg.link!)}
+                                                >{seg.text}</span>
+                                              );
+                                            })}
+                                          </td>
+                                        );
+                                      })}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        );
+                      }
+                      if (p.type === "image" && p.src) {
+                        return (
+                          <div key={p.index} style={{ margin: "10px 0 14px" }}>
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", padding: "2px 7px", borderRadius: 4, marginBottom: 6, background: "#e0f2f1", color: "#00695c" }}>⬚ Figure</div>
+                            <div style={{ border: "1px solid #b2dfdb", borderRadius: 6, overflow: "hidden", background: "#f5fffe", padding: 8, display: "inline-block", maxWidth: "100%" }}>
+                              <img src={p.src} alt="figure" style={{ display: "block", width: p.width_frac ? `${Math.round(p.width_frac * 100)}%` : undefined, maxWidth: "100%", height: "auto" }} />
+                            </div>
+                          </div>
+                        );
+                      }
                       const segments = segmentParagraph(p.text, preview.links);
                       return (
                         <p key={p.index} style={{ margin: "0 0 8px", color: "#444" }}>

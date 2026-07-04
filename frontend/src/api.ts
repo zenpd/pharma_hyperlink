@@ -274,6 +274,32 @@ export const api = {
     cancel: (runId: string) =>
       post<{ run_id: string; signalled: boolean }>(`${PIPELINE_BASE}/run/${runId}/cancel`, {}),
 
+    /** Delete a single run from the store (pass removeDisk=true to also wipe output/) */
+    deleteRun: async (runId: string, removeDisk = false): Promise<{ run_id: string; deleted: boolean }> => {
+      const res = await fetch(
+        `${PIPELINE_BASE}/run/${runId}${removeDisk ? "?remove_disk=true" : ""}`,
+        { method: "DELETE", credentials: CREDS },
+      );
+      if (!res.ok) {
+        broadcastIfUnauthorized(res.status);
+        throw new Error(`Delete run failed: ${await res.text()}`);
+      }
+      return res.json();
+    },
+
+    /** Delete ALL runs from the store (pass removeDisk=true to also wipe output/) */
+    clearAllRuns: async (removeDisk = false): Promise<{ deleted: number }> => {
+      const res = await fetch(
+        `${PIPELINE_BASE}/runs${removeDisk ? "?remove_disk=true" : ""}`,
+        { method: "DELETE", credentials: CREDS },
+      );
+      if (!res.ok) {
+        broadcastIfUnauthorized(res.status);
+        throw new Error(`Clear all runs failed: ${await res.text()}`);
+      }
+      return res.json();
+    },
+
     /** Before/after preview for one document in a finished run */
     documentPreview: (runId: string, doc: string) => {
       const key = _previewCacheKey(runId, doc);

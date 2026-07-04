@@ -327,9 +327,9 @@ function AppShell() {
 
           <div>
             <div className="page-name">
-              {active ? active.label : "Hyperlink Engine"}
+              {active ? active.label : "PharmaDocs Hyperlinker"}
             </div>
-            <div className="page-sub">Regulatory cross-reference linking</div>
+            <div className="page-sub">Reg Compliant</div>
           </div>
 
           {/* <SecurityControls /> */}
@@ -370,8 +370,8 @@ function AppShell() {
                   </svg>
                 </span>
                 <div>
-                  <div className="brand-name">Hyperlink Engine</div>
-                  <div className="brand-sub">Regulatory Linker</div>
+                  <div className="brand-name">PharmaDocs Hyperlinker</div>
+                  <div className="brand-sub">Reg Compliant</div>
                 </div>
               </div>
               {NAV_GROUPS.map((grp) => (

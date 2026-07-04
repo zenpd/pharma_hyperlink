@@ -177,15 +177,37 @@ const baseName = (s: string) => s.split(/[\\/]/).pop() ?? s;
 const DOCX_TABLE_STYLE: CSSProperties = {
   borderCollapse: "collapse",
   width: "100%",
-  margin: "4px 0 12px",
+  margin: "0 0 4px",
   fontSize: 12,
   background: "#fff",
 };
 const DOCX_CELL_STYLE: CSSProperties = {
   border: "1px solid #cfd8dc",
-  padding: "3px 7px",
+  padding: "4px 8px",
   textAlign: "left",
   verticalAlign: "top",
+};
+const BLOCK_LABEL_STYLE: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 4,
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: ".06em",
+  textTransform: "uppercase",
+  padding: "2px 7px",
+  borderRadius: 4,
+  marginBottom: 6,
+};
+const TABLE_LABEL_STYLE: CSSProperties = {
+  ...BLOCK_LABEL_STYLE,
+  background: "#e8eaf6",
+  color: "#3949ab",
+};
+const IMAGE_LABEL_STYLE: CSSProperties = {
+  ...BLOCK_LABEL_STYLE,
+  background: "#e0f2f1",
+  color: "#00695c",
 };
 
 // ── component ────────────────────────────────────────────────────────────────
@@ -487,28 +509,39 @@ export function BeforeAfter({ preview, afterPath, afterTitle, onLinkClick, runId
   function renderBeforeBlock(b: DocPreviewBlock) {
     if (b.type === "table" && b.rows && b.rows.length > 0) {
       return (
-        <table key={b.index} className="docx-table" style={DOCX_TABLE_STYLE}>
-          <tbody>
-            {b.rows.map((row, ri) => (
-              <tr key={ri}>
-                {row.map((cell, ci) => (
-                  <td key={ci} style={DOCX_CELL_STYLE}>{cell}</td>
+        <div key={b.index} style={{ margin: "10px 0 14px" }}>
+          <div style={TABLE_LABEL_STYLE}>⊞ Table</div>
+          <div style={{ border: "1px solid #c5cae9", borderRadius: 6, overflow: "hidden" }}>
+            <table className="docx-table" style={DOCX_TABLE_STYLE}>
+              <tbody>
+                {b.rows.map((row, ri) => (
+                  <tr key={ri} style={{ background: ri % 2 === 0 ? "#fafafa" : "#fff" }}>
+                    {row.map((cell, ci) => (
+                      <td key={ci} style={DOCX_CELL_STYLE}>{cell}</td>
+                    ))}
+                  </tr>
                 ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+              </tbody>
+            </table>
+          </div>
+        </div>
       );
     }
     if (b.type === "image" && b.src) {
       return (
-        <img key={b.index} src={b.src} alt="figure"
-          style={{ display: "block", width: b.width_frac ? `${Math.round(b.width_frac * 100)}%` : undefined,
-                   maxWidth: "100%", height: "auto", margin: "6px 0",
-                   border: "1px solid #eee", borderRadius: 4 }} />
+        <div key={b.index} style={{ margin: "10px 0 14px" }}>
+          <div style={IMAGE_LABEL_STYLE}>⬚ Figure</div>
+          <div style={{ border: "1px solid #b2dfdb", borderRadius: 6, overflow: "hidden",
+                        background: "#f5fffe", padding: 8, display: "inline-block", maxWidth: "100%" }}>
+            <img src={b.src} alt="figure"
+              style={{ display: "block",
+                       width: b.width_frac ? `${Math.round(b.width_frac * 100)}%` : undefined,
+                       maxWidth: "100%", height: "auto" }} />
+          </div>
+        </div>
       );
     }
-    return <p key={b.index} style={{ margin: "0 0 8px", color: "#444" }}>{b.text}</p>;
+    return <p key={b.index} style={{ margin: "0 0 7px", color: "#444", lineHeight: 1.65 }}>{b.text}</p>;
   }
 
   /** AFTER panel — links highlighted; per-block scroll ref + flash highlight. */
@@ -516,35 +549,50 @@ export function BeforeAfter({ preview, afterPath, afterTitle, onLinkClick, runId
     const flash = highlightPara === b.index;
     if (b.type === "image" && b.src) {
       return (
-        <img key={b.index}
-          ref={(el) => { afterRefs.current[b.index] = el; }}
-          src={b.src} alt="figure"
-          style={{ display: "block", width: b.width_frac ? `${Math.round(b.width_frac * 100)}%` : undefined,
-                   maxWidth: "100%", height: "auto", margin: "6px 0",
-                   border: "1px solid #eee", borderRadius: 4,
-                   outline: flash ? "3px solid #ffc107" : "none", transition: "outline 0.4s" }} />
+        <div key={b.index} style={{ margin: "10px 0 14px" }}
+          ref={(el) => { afterRefs.current[b.index] = el; }}>
+          <div style={IMAGE_LABEL_STYLE}>⬚ Figure</div>
+          <div style={{
+            border: `1px solid ${flash ? "#ffc107" : "#b2dfdb"}`,
+            borderRadius: 6, overflow: "hidden",
+            background: flash ? "#fffde7" : "#f5fffe",
+            padding: 8, display: "inline-block", maxWidth: "100%",
+            transition: "border-color 0.4s, background 0.4s",
+          }}>
+            <img src={b.src} alt="figure"
+              style={{ display: "block",
+                       width: b.width_frac ? `${Math.round(b.width_frac * 100)}%` : undefined,
+                       maxWidth: "100%", height: "auto" }} />
+          </div>
+        </div>
       );
     }
     if (b.type === "table" && b.rows && b.rows.length > 0) {
       return (
-        <table
-          key={b.index}
-          ref={(el) => { afterRefs.current[b.index] = el; }}
-          className="docx-table"
-          style={{ ...DOCX_TABLE_STYLE, background: flash ? "#fff3cd" : "#fff", transition: "background 0.4s" }}
-        >
-          <tbody>
-            {b.rows.map((row, ri) => (
-              <tr key={ri}>
-                {row.map((cell, ci) => (
-                  <td key={ci} style={DOCX_CELL_STYLE}>
-                    {renderSegments(segmentParagraph(cell, linksForBlock(b), { inTable: true }))}
-                  </td>
+        <div key={b.index} style={{ margin: "10px 0 14px" }}
+          ref={(el) => { afterRefs.current[b.index] = el; }}>
+          <div style={TABLE_LABEL_STYLE}>⊞ Table</div>
+          <div style={{
+            border: `1px solid ${flash ? "#ffc107" : "#c5cae9"}`,
+            borderRadius: 6, overflow: "hidden",
+            transition: "border-color 0.4s",
+          }}>
+            <table className="docx-table"
+              style={{ ...DOCX_TABLE_STYLE, background: flash ? "#fff3cd" : "#fff", transition: "background 0.4s" }}>
+              <tbody>
+                {b.rows.map((row, ri) => (
+                  <tr key={ri} style={{ background: ri % 2 === 0 ? (flash ? "#fff3cd" : "#fafafa") : "#fff" }}>
+                    {row.map((cell, ci) => (
+                      <td key={ci} style={DOCX_CELL_STYLE}>
+                        {renderSegments(segmentParagraph(cell, linksForBlock(b), { inTable: true }))}
+                      </td>
+                    ))}
+                  </tr>
                 ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+              </tbody>
+            </table>
+          </div>
+        </div>
       );
     }
     return (
@@ -600,7 +648,7 @@ export function BeforeAfter({ preview, afterPath, afterTitle, onLinkClick, runId
           <div
             ref={(el) => { beforeScrollRef.current = el; }}
             onScroll={() => mirrorScroll(beforeScrollRef.current, afterScrollRef.current)}
-            style={{ padding: "12px 14px", maxHeight: 520, overflowY: "auto", fontSize: 13, lineHeight: 1.65 }}
+            style={{ padding: "12px 14px", maxHeight: 740, overflowY: "auto", fontSize: 13, lineHeight: 1.65 }}
           >
             {preview.paragraphs.map(renderBeforeBlock)}
           </div>
@@ -659,7 +707,7 @@ export function BeforeAfter({ preview, afterPath, afterTitle, onLinkClick, runId
           <div
             ref={(el) => { afterScrollRef.current = el; }}
             onScroll={() => mirrorScroll(afterScrollRef.current, beforeScrollRef.current)}
-            style={{ padding: "12px 14px", maxHeight: 520, overflowY: "auto", fontSize: 13, lineHeight: 1.65, position: "relative" }}
+            style={{ padding: "12px 14px", maxHeight: 740, overflowY: "auto", fontSize: 13, lineHeight: 1.65, position: "relative" }}
           >
             {preview.paragraphs.map(renderAfterBlock)}
           </div>
@@ -676,7 +724,7 @@ export function BeforeAfter({ preview, afterPath, afterTitle, onLinkClick, runId
             <div style={{ fontWeight: 700, fontSize: 13 }}>📎 LINKED DOCUMENTS</div>
             <div style={{ fontSize: 11, color: "#555" }}>Referenced from this document</div>
           </div>
-          <div style={{ padding: "10px 12px", maxHeight: 520, overflowY: "auto" }}>
+          <div style={{ padding: "10px 12px", maxHeight: 740, overflowY: "auto" }}>
             {relatedDocs.length === 0 ? (
               <div style={{ fontSize: 12, color: "#888", lineHeight: 1.5 }}>
                 No cross-document links — this document only has internal or external links.
