@@ -36,6 +36,7 @@ playwright = { version = "^1.47.0", optional = true }
 
 # Layer 6 & cross-cutting
 fastapi = { version = "^0.115.0", optional = true }
+python-multipart = { version = ">=0.0.18", optional = true }
 uvicorn = { version = "^0.30.0", optional = true }
 openpyxl = "^3.1.0"
 
@@ -65,6 +66,11 @@ Pillow = { version = "^10.0", optional = true }
 # Requires system Tesseract + Ghostscript (brew install tesseract ghostscript).
 ocrmypdf = { version = "==16.0.4", optional = true }
 
+# Persistent, cross-process preview/parse cache (pure-Python, SQLite-backed — no
+# server, no Docker). Optional: absent → the engine falls back to its in-memory
+# cache with zero behavior change.
+diskcache = { version = "^5.6.1", optional = true }
+
 # Foundations
 pydantic = "^2.7.0"
 pydantic-settings = "^2.4.0"
@@ -88,17 +94,21 @@ jupyter = "^1.1.0"
 [tool.poetry.extras]
 llm = ["ollama", "sentence-transformers", "litellm"]
 viewers = ["playwright"]
-api = ["fastapi", "uvicorn"]
+api = ["fastapi", "uvicorn", "python-multipart"]
 pipeline = ["celery", "redis"]
 graph = ["neo4j"]
 auth = ["supertokens-python"]
 references = ["gliner"]
 ocr = ["ocrmypdf","pytesseract"]
+# Persistent preview cache. Both backends are optional; the engine auto-selects
+# Redis when a server is reachable, else diskcache, else in-memory only.
+cache = ["diskcache", "redis"]
 all = [
     "ollama",
     "sentence-transformers",
     "playwright",
     "fastapi",
+    "python-multipart",
     "uvicorn",
     "celery",
     "redis",
@@ -107,6 +117,7 @@ all = [
     "supertokens-python",
     "gliner",
     "ocrmypdf",
+    "diskcache",
 ]
 
 [tool.poetry.scripts]

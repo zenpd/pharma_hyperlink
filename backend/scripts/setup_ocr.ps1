@@ -3,7 +3,11 @@ $ErrorActionPreference = "Stop"
  
 # 1) Scoop (user-level installer)
 if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
-    Set-ExecutionPolicy -Scope CurrentUser RemoteSigned -Force
+    try {
+        Set-ExecutionPolicy -Scope CurrentUser RemoteSigned -Force
+    } catch {
+        Write-Warning "Failed to set execution policy: $_"
+    }
     Invoke-RestMethod get.scoop.sh | Invoke-Expression
 }
  

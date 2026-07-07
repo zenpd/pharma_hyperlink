@@ -9,9 +9,31 @@ two auth dependencies on a ``create_app()`` instance.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Iterable
 
 import pytest
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _isolate_preview_cache() -> Iterable[None]:
+    """Force the persistent preview cache OFF for the whole test suite.
+
+    Without this, tests that render a document preview would read/write the
+    developer's *real* Redis (or the machine-global disk cache) — causing
+    cross-run pollution and flakiness. The dedicated cache tests
+    (``test_preview_cache.py``) override ``HYPERLINK_CACHE_BACKEND`` per-test, so
+    they still exercise the disk/redis paths in isolated temp dirs / fakes.
+    """
+    prev = os.environ.get("HYPERLINK_CACHE_BACKEND")
+    os.environ["HYPERLINK_CACHE_BACKEND"] = "off"
+    try:
+        yield
+    finally:
+        if prev is None:
+            os.environ.pop("HYPERLINK_CACHE_BACKEND", None)
+        else:
+            os.environ["HYPERLINK_CACHE_BACKEND"] = prev
 
 
 @pytest.fixture

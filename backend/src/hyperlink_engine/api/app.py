@@ -1045,6 +1045,32 @@ def _doc_blocks_cache_key(
     return (str(path.resolve()), st.st_mtime_ns, st.st_size, detect_tables, render_images)
 
 
+def _disk_blocks_get(key: "tuple[str, int, int, bool, bool]") -> "list[dict[str, Any]] | None":
+    """Read parsed blocks from the persistent (cross-restart) disk cache.
+
+    Best-effort: returns None when the disk cache is disabled / not installed /
+    errors, so the caller simply falls through to a normal parse. The disk layer
+    sits BEHIND the in-memory LRU — it only pays off on the first access after a
+    process restart or from a second process (e.g. a Celery worker).
+    """
+    try:
+        from hyperlink_engine.core.preview_cache import get_blocks
+
+        return get_blocks(key)
+    except Exception:  # noqa: BLE001 — a missing/broken cache is just a miss
+        return None
+
+
+def _disk_blocks_set(key: "tuple[str, int, int, bool, bool]", blocks: "list[dict[str, Any]]") -> None:
+    """Persist parsed blocks to the disk cache (best-effort; never raises)."""
+    try:
+        from hyperlink_engine.core.preview_cache import set_blocks
+
+        set_blocks(key, blocks)
+    except Exception:  # noqa: BLE001 — a write failure must not break parsing
+        pass
+
+
 def _read_doc_blocks(path: "Path", *, detect_tables: bool = True, render_images: bool = True) -> list[dict[str, Any]]:
     """Read a .docx or .pdf into the shared preview-block shape (memoized).
 
@@ -1068,6 +1094,17 @@ def _read_doc_blocks(path: "Path", *, detect_tables: bool = True, render_images:
             if hit is not None:
                 _DOC_BLOCKS_CACHE.move_to_end(key)  # mark most-recently-used
                 return hit
+        # In-memory miss → try the persistent disk cache (survives restarts /
+        # shared across processes). On a hit, promote into the in-memory LRU so
+        # subsequent reads in this process stay hot.
+        disk_hit = _disk_blocks_get(key)
+        if disk_hit is not None:
+            with _DOC_BLOCKS_CACHE_LOCK:
+                _DOC_BLOCKS_CACHE[key] = disk_hit
+                _DOC_BLOCKS_CACHE.move_to_end(key)
+                while len(_DOC_BLOCKS_CACHE) > _DOC_BLOCKS_CACHE_MAX:
+                    _DOC_BLOCKS_CACHE.popitem(last=False)
+            return disk_hit
 
     suffix = path.suffix.lower()
     if suffix == ".docx":
@@ -1083,6 +1120,8 @@ def _read_doc_blocks(path: "Path", *, detect_tables: bool = True, render_images:
             _DOC_BLOCKS_CACHE.move_to_end(key)
             while len(_DOC_BLOCKS_CACHE) > _DOC_BLOCKS_CACHE_MAX:
                 _DOC_BLOCKS_CACHE.popitem(last=False)  # evict least-recently-used
+        # Write-through to the disk cache so the next process/restart reuses it.
+        _disk_blocks_set(key, blocks)
 
     return blocks
 

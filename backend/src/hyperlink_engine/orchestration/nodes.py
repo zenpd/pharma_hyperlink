@@ -67,8 +67,13 @@ def node_load_dossier(state: PipelineState) -> PipelineState:
 
         _s = get_settings()
         ocr_on, ocr_lang = _s.ocr_enabled, _s.ocr_language
+        # Machine-global, content-addressed OCR cache root (skips re-OCR compute
+        # for an identical scan across runs). Resolve relative to project root.
+        ocr_cache_root = _s.ocr_cache_dir
+        if not ocr_cache_root.is_absolute():
+            ocr_cache_root = _s.project_root / ocr_cache_root
     except Exception:  # pragma: no cover — settings must never break a run
-        ocr_on, ocr_lang = False, "eng"
+        ocr_on, ocr_lang, ocr_cache_root = False, "eng", None
     ocr_dir = output_dir.parent / "ocr"
     ocr_applied = 0
 
@@ -80,7 +85,7 @@ def node_load_dossier(state: PipelineState) -> PipelineState:
             try:
                 from hyperlink_engine.core.ingestion.ocr_preprocess import maybe_ocr
 
-                src = maybe_ocr(fp, ocr_dir, language=ocr_lang)
+                src = maybe_ocr(fp, ocr_dir, language=ocr_lang, cache_root=ocr_cache_root)
             except Exception as exc:  # noqa: BLE001 — never break ingestion
                 _log.warning("ocr_preprocess_error", file=str(fp), error=str(exc))
                 src = fp

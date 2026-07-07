@@ -79,8 +79,11 @@ audit.jsonl
 # ── Generated data ──────────────────────────────────────────────────────
 backend/data/synthetic/
 backend/data/training/checkpoints/
-backend/data/samples/  # exclude until provenance manifest committed
+# exclude until provenance manifest committed (keep the dir via .gitkeep)
+backend/data/samples/*
 !backend/data/samples/.gitkeep
+# machine-global OCR cache — content-addressed, regenerable
+backend/data/ocr_cache/
 
 # ── Model artifacts ─────────────────────────────────────────────────────
 models/

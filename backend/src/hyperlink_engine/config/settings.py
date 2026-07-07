@@ -205,6 +205,13 @@ class Settings(BaseSettings):
         default_factory=lambda: [".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".webp"],
         description="File extensions recognised as scannable image documents.",
     )
+    # Machine-global, content-addressed OCR cache. An identical scan (by bytes)
+    # is OCR'd once per machine instead of once per run. Relative paths resolve
+    # against ``project_root``.
+    ocr_cache_dir: Path = Field(
+        default=Path("data/ocr_cache"),
+        description="Directory for the machine-global, content-addressed OCR cache.",
+    )
 
     # ── Compliance ─────────────────────────────────────────────────────
     enforce_local_llm_only: bool = Field(
